@@ -243,44 +243,6 @@ export async function resolveSku(bus: ToolBus, input: { rawSku: string }): Promi
   });
 }
 
-// ──────────────────────────── search_catalog ───────────────────────────────
-
-export async function searchCatalog(
-  bus: ToolBus,
-  input: { categoryCodes?: string[]; text?: string; excludeAccessories?: boolean; limit?: number },
-): Promise<ProductView[]> {
-  return bus.run("search_catalog", input, async (ctx) => {
-    const rows = await ctx.prisma.product.findMany({
-      where: {
-        ...(input.categoryCodes?.length ? { category: { code: { in: input.categoryCodes } } } : {}),
-        ...(input.excludeAccessories ? { isAccessory: false } : {}),
-        ...(input.text
-          ? {
-              OR: [
-                { sku: { contains: input.text, mode: "insensitive" as const } },
-                { name: { contains: input.text, mode: "insensitive" as const } },
-                { description: { contains: input.text, mode: "insensitive" as const } },
-              ],
-            }
-          : {}),
-        lifecycle: { not: "DISCONTINUED" },
-      },
-      include: PRODUCT_INCLUDE,
-      take: input.limit ?? 60,
-      orderBy: { sku: "asc" },
-    });
-
-    const products = rows.map(toProductView);
-    return {
-      output: products,
-      summary: `Catalog search returned ${products.length} item(s)${
-        input.categoryCodes?.length ? ` in ${input.categoryCodes.join(", ")}` : ""
-      }.`,
-      status: products.length === 0 ? "EMPTY" : "OK",
-    } satisfies ToolResult<ProductView[]>;
-  });
-}
-
 // ──────────────────────── search_technical_docs ────────────────────────────
 
 export interface DocHit {
@@ -475,6 +437,8 @@ export async function applyAdapter(
     providedConnection: string;
     adapterPressureBar: number | null;
     adapterTempC: number | null;
+    dutyPressureBar: number | null;
+    dutyTempC: number | null;
   },
 ): Promise<{ applied: true }> {
   return bus.run("apply_adapter", input, async (ctx) => {
@@ -497,9 +461,13 @@ export async function applyAdapter(
 
     return {
       output: { applied: true as const },
-      summary: `${input.productSku} presents ${input.providedConnection.includes(input.requiredConnection) ? "a different connection" : input.providedConnection} to a ${input.requiredConnection} line. The ${input.adapterSku} adapter kit${
-        input.adapterPressureBar && input.adapterTempC
-          ? ` (rated ${input.adapterPressureBar} bar, ${input.adapterTempC} °C)`
+      summary: `${input.productSku} presents ${input.providedConnection} to a ${input.requiredConnection} line. The ${input.adapterSku} adapter kit${
+        input.adapterPressureBar != null && input.adapterTempC != null
+          ? ` (rated ${input.adapterPressureBar} bar, ${input.adapterTempC} °C${
+              input.dutyPressureBar != null || input.dutyTempC != null
+                ? `, checked against a duty of ${input.dutyPressureBar ?? "—"} bar and ${input.dutyTempC ?? "—"} °C`
+                : ""
+            })`
           : ""
       } resolves it, so the connection check is re-evaluated as a pass carrying an "adapter required" warning. Two kits are needed per pump, suction and discharge.`,
       safety: "NEEDS_REVIEW",
@@ -709,13 +677,15 @@ export async function checkInventory(
     });
     const records = rows.map(toInventoryRecord);
 
+    const thresholds = await loadThresholds(ctx.prisma);
     const plan = planFulfillment(input.quantity, records, {
       asOf: ctx.asOf,
       requiredBy: input.requiredBy,
       destinationZone: input.destinationZone,
       factoryLeadTimeDays: input.leadTimeDays,
+      maxFactoryUnits: thresholds.maxFactoryUnits,
     });
-    assertPlanIsPhysical(plan, records);
+    assertPlanIsPhysical(plan, records, ctx.asOf);
 
     const byWarehouse = records.map((r) => ({
       code: r.warehouseCode,
@@ -729,7 +699,9 @@ export async function checkInventory(
     const available = totalAtp(records);
     const stockAllocations = plan.allocations.filter((a) => a.source !== "FACTORY");
     const summary =
-      available === 0
+      !plan.canFulfill
+        ? `${input.sku}: only ${plan.allocatedQty} of ${input.quantity} units can be sourced — ${available} available to promise and a factory build cannot cover the remaining ${plan.shortfall}.`
+        : available === 0
         ? `${input.sku} has no available-to-promise stock at any location; the plan falls back to a ${input.leadTimeDays}-day factory build.`
         : plan.isSplit
           ? `${input.sku}: ${available} units available to promise across ${byWarehouse.filter((w) => w.atp > 0).length} locations. No single site covers ${input.quantity}, so the plan draws ${stockAllocations.map((a) => `${a.quantity} from ${a.warehouseCode}`).join(" and ")}.`
@@ -918,11 +890,11 @@ export async function checkMargin(
 
     return {
       output: margin,
-      summary: `Gross margin ${formatCurrency(margin.marginCents)} (${formatPct(margin.marginPct)}) after absorbing ${formatCurrency(margin.freightCostCents)} freight — ${
+      summary: `Gross margin ${formatCurrency(margin.marginCents)} on goods — ${formatPct(margin.marginPct)} of the ${formatCurrency(margin.revenueCents + margin.freightCostCents)} invoiced, ${
         below
           ? `below the ${formatPct(thresholds.minMarginPct, 0)} policy minimum`
           : `above the ${formatPct(thresholds.minMarginPct, 0)} policy minimum`
-      }.`,
+      }. Freight of ${formatCurrency(margin.freightCostCents)} is billed at cost and contributes no margin.`,
       safety: below ? "NEEDS_REVIEW" : "AUTO_SAFE",
       evidence: [
         {
@@ -944,6 +916,7 @@ export async function loadThresholds(prisma: PrismaClient): Promise<PolicyThresh
     minMarginPct: byCode.get("MIN_MARGIN_PCT") ?? DEFAULT_THRESHOLDS.minMarginPct,
     hardMarginFloorPct: byCode.get("HARD_MARGIN_FLOOR_PCT") ?? DEFAULT_THRESHOLDS.hardMarginFloorPct,
     largeQuoteCents: toCents(byCode.get("LARGE_QUOTE_VALUE") ?? centsToNumber(DEFAULT_THRESHOLDS.largeQuoteCents)),
+    maxFactoryUnits: byCode.get("MAX_FACTORY_UNITS") ?? DEFAULT_THRESHOLDS.maxFactoryUnits,
   };
 }
 

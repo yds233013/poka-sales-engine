@@ -131,7 +131,9 @@ describe("freight engine", () => {
     expect(quote.service).toBe("GROUND");
   });
 
-  it("says so when even the fastest service misses the date", () => {
+  it("does not buy a faster service that would still be late", () => {
+    // Stock is not ready for 40 business days; no service level can rescue a
+    // date 5 days out, so paying for air would be pure waste.
     const quote = quoteFreight({
       shipments: shipments(50, allocation("CHI", 10, 40)),
       zoneByWarehouse: ZONES,
@@ -141,7 +143,34 @@ describe("freight engine", () => {
       requiredBy: addBusinessDays(MONDAY, 5),
       asOf: MONDAY,
     });
-    expect(quote.notes.join(" ")).toMatch(/is after the requested date/);
+    expect(quote.service).toBe("GROUND");
+    expect(quote.expedited).toBe(false);
+    expect(quote.missesDeadline).toBe(true);
+    expect(quote.notes.join(" ")).toMatch(/No service level reaches the site by the requested date/);
+
+    const ground = quoteFreight({
+      shipments: shipments(50, allocation("CHI", 10, 40)),
+      zoneByWarehouse: ZONES,
+      destinationZone: "SOUTH_CENTRAL",
+      hazmat: false,
+      rules: RULES,
+      asOf: MONDAY,
+    });
+    expect(quote.totalCents).toBe(ground.totalCents);
+  });
+
+  it("only reports expedited when the upgrade actually makes the date", () => {
+    const made = quoteFreight({
+      shipments: shipments(50, allocation("CHI", 10, 1)),
+      zoneByWarehouse: ZONES,
+      destinationZone: "SOUTH_CENTRAL",
+      hazmat: false,
+      rules: RULES,
+      requiredBy: addBusinessDays(MONDAY, 3),
+      asOf: MONDAY,
+    });
+    expect(made.expedited).toBe(true);
+    expect(made.missesDeadline).toBe(false);
   });
 
   it("refuses to rate a shipment with no rule for the lane", () => {
@@ -213,17 +242,33 @@ describe("freight engine", () => {
 });
 
 describe("margin engine", () => {
-  it("treats freight as a cost of sale", () => {
+  it("treats billed freight as a pass-through that nets to zero", () => {
     const margin = computeMargin(toCents(101798.4), toCents(70560), toCents(1010.48));
-    expect(margin.marginCents).toBe(toCents(101798.4) - toCents(70560) - toCents(1010.48));
-    // Percentage is taken against total invoiced value, goods plus freight.
-    expect(margin.marginPct).toBeCloseTo(29.4, 1);
+    // The customer pays the freight, so subtracting its cost without counting
+    // its revenue would understate the deal by the whole freight charge.
+    expect(margin.marginCents).toBe(toCents(101798.4) - toCents(70560));
+    expect(margin.marginPct).toBeCloseTo(30.4, 1);
   });
 
-  it("reports margin before freight separately", () => {
+  it("a larger freight charge does not change the margin earned", () => {
+    const cheap = computeMargin(toCents(10000), toCents(6000), toCents(100));
+    const expensive = computeMargin(toCents(10000), toCents(6000), toCents(3000));
+    expect(expensive.marginCents).toBe(cheap.marginCents);
+    // Only the denominator moves — the deal is worth the same in dollars, and
+    // less as a share of a bigger invoice.
+    expect(expensive.marginPct).toBeLessThan(cheap.marginPct);
+  });
+
+  it("reports margin on goods separately from margin on the invoice", () => {
     const margin = computeMargin(toCents(1000), toCents(600), toCents(100));
     expect(margin.productMarginPct).toBe(40);
+    expect(margin.marginPct).toBeCloseTo(36.36, 1);
     expect(margin.marginPct).toBeLessThan(margin.productMarginPct);
+  });
+
+  it("equals the goods margin exactly when there is no freight", () => {
+    const margin = computeMargin(toCents(1000), toCents(600), 0);
+    expect(margin.marginPct).toBe(margin.productMarginPct);
   });
 
   it("returns a negative margin rather than clamping it", () => {

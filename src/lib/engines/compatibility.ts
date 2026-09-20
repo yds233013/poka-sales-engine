@@ -27,15 +27,6 @@ import type {
   SpecValue,
 } from "@/lib/domain/types";
 
-/** Requirement keys that describe commerce, not physics — skipped by rules. */
-const NON_TECHNICAL_KEYS = new Set([
-  "quantity",
-  "required_by",
-  "ship_to",
-  "budget",
-  "incumbent_sku",
-]);
-
 function renderSpec(spec: SpecValue | undefined): string {
   if (!spec) return "not published";
   if (spec.type === "NUMERIC" && spec.numValue != null) {
@@ -199,11 +190,6 @@ function evaluateRule(
   };
 }
 
-export interface EvaluateOptions {
-  /** Lifecycle statuses that should raise a warning rather than pass silently. */
-  flagLifecycle?: boolean;
-}
-
 /**
  * Evaluate one candidate product against all applicable requirements.
  *
@@ -215,7 +201,6 @@ export function evaluateCandidate(
   product: ProductView,
   requirements: RequirementView[],
   rules: CompatibilityRuleView[],
-  options: EvaluateOptions = {},
 ): CompatibilityVerdict {
   const checks: CheckOutcome[] = [];
   const seenDimensions = new Set<string>();
@@ -252,7 +237,7 @@ export function evaluateCandidate(
     seenDimensions.add(rule.dimension);
   }
 
-  if (options.flagLifecycle !== false) {
+  {
     if (product.lifecycle === "END_OF_LIFE" || product.lifecycle === "DISCONTINUED") {
       checks.push({
         dimension: "lifecycle",
@@ -359,14 +344,12 @@ export function assertNotBlocked(verdict: CompatibilityVerdict): void {
   }
 }
 
-export function requirementsUsable(requirements: RequirementView[]): {
-  usable: boolean;
-  missing: RequirementView[];
-  ambiguous: RequirementView[];
-} {
-  const missing = requirements.filter((r) => r.kind === "MISSING");
-  const ambiguous = requirements.filter((r) => r.kind === "AMBIGUOUS");
-  return { usable: missing.length === 0, missing, ambiguous };
+/**
+ * Does `haystack` contain every token of `needle`?
+ *
+ * Exported so the adapter path uses the same normalisation as the rules
+ * themselves — a raw `String.includes` there would let "DN50" match "DN500".
+ */
+export function containsTokens(haystack: string, needle: string): boolean {
+  return tokensContain(haystack, needle);
 }
-
-export { NON_TECHNICAL_KEYS };

@@ -203,6 +203,14 @@ export const POLICY_THRESHOLDS = [
       "Deals below this margin cannot be released by sales management — they require commercial director approval.",
   },
   {
+    code: "MAX_FACTORY_UNITS",
+    label: "Maximum factory build per order",
+    numericValue: 250,
+    unit: "units",
+    description:
+      "The largest quantity that may be promised against a single standard factory build. Beyond this the enquiry is a scheduled project and the factory has to confirm a build plan.",
+  },
+  {
     code: "LARGE_QUOTE_VALUE",
     label: "Large quote review threshold",
     numericValue: 50000,

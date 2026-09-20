@@ -242,6 +242,12 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
 
             {quote ? (
               <CommercialsPanel
+                requestId={request.id}
+                repriceDisabledReason={
+                  request.status === "COMPLETED"
+                    ? "This case is closed. Reopen it to change the pricing."
+                    : undefined
+                }
                 marginFloorPct={thresholds.minMarginPct}
                 quote={{
                   quoteNumber: quote.quoteNumber,

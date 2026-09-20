@@ -25,6 +25,11 @@ export function addBusinessDays(from: Date, days: number): Date {
     const day = d.getUTCDay();
     if (day !== 0 && day !== 6) remaining -= 1;
   }
+  // Nothing ships on a Saturday. Adding zero days to a weekend date has to
+  // roll forward too, or a same-day pick lands on a closed dock.
+  while (d.getUTCDay() === 0 || d.getUTCDay() === 6) {
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
   return d;
 }
 
@@ -47,6 +52,13 @@ export interface PlanOptions {
   allowIncoming?: boolean;
   /** Allow a factory build to cover the remainder. */
   allowFactory?: boolean;
+  /**
+   * Largest quantity a factory build may be promised for in one order.
+   * Without a ceiling the planner absorbs any remainder — so `canFulfill` was
+   * always true and `shortfall` always zero, and a 9,999-unit enquiry produced
+   * a quotation stating a single lead time for the lot as if it were routine.
+   */
+  maxFactoryUnits?: number;
 }
 
 interface Source {
@@ -185,16 +197,24 @@ export function planFulfillment(
   }
 
   if (remaining > 0 && options.allowFactory !== false) {
-    const readyDate = addBusinessDays(asOf, options.factoryLeadTimeDays);
-    allocations.push({
-      warehouseCode: "FACTORY",
-      warehouseName: "Factory build",
-      quantity: remaining,
-      source: "FACTORY",
-      readyDate,
-      note: `Standard factory lead time ${options.factoryLeadTimeDays} days`,
-    });
-    remaining = 0;
+    const ceiling = options.maxFactoryUnits ?? Number.POSITIVE_INFINITY;
+    const buildable = Math.min(remaining, ceiling);
+    if (buildable > 0) {
+      allocations.push({
+        warehouseCode: "FACTORY",
+        warehouseName: "Factory build",
+        quantity: buildable,
+        source: "FACTORY",
+        readyDate: addBusinessDays(asOf, options.factoryLeadTimeDays),
+        note: `Built to order, standard factory lead time ${options.factoryLeadTimeDays} days`,
+      });
+      remaining -= buildable;
+    }
+    if (remaining > 0) {
+      notes.push(
+        `A further ${remaining} units are beyond what a single factory build covers (${ceiling} per order). A quantity this size is a scheduled project, not a catalog order, and needs the factory to confirm a build plan.`,
+      );
+    }
   }
 
   const allocatedQty = allocations.reduce((sum, a) => sum + a.quantity, 0);
@@ -204,14 +224,16 @@ export function planFulfillment(
       ? new Date(Math.max(...allocations.map((a) => a.readyDate.getTime())))
       : null;
 
-  const stockWarehouses = new Set(
-    allocations.filter((a) => a.source !== "FACTORY").map((a) => a.warehouseCode),
-  );
-  const isSplit = stockWarehouses.size > 1;
+  // A split is anything that reaches the customer as more than one delivery.
+  // Counting only stock locations hid the commonest case of all — part from
+  // the shelf, the rest built at the factory weeks later — from the approval
+  // engine, while the screen showed the operator "split shipment".
+  const origins = new Set(allocations.map((a) => a.warehouseCode));
+  const isSplit = origins.size > 1;
 
   if (isSplit) {
     notes.push(
-      `Requested quantity cannot be covered from a single location — plan splits across ${[...stockWarehouses].join(", ")}.`,
+      `Requested quantity cannot be covered from one source — the plan draws on ${[...origins].join(", ")} and will reach site as ${origins.size} deliveries.`,
     );
   }
 
@@ -247,7 +269,11 @@ export function totalAtp(records: InventoryRecord[]): number {
  * Sanity check applied before a plan is allowed to become a quote. Catches
  * any future bug where an allocation exceeds what the warehouse actually has.
  */
-export function assertPlanIsPhysical(plan: FulfillmentPlan, records: InventoryRecord[]): void {
+export function assertPlanIsPhysical(
+  plan: FulfillmentPlan,
+  records: InventoryRecord[],
+  asOf?: Date,
+): void {
   const byWarehouse = new Map<string, number>();
   for (const a of plan.allocations) {
     if (a.source === "FACTORY") continue;
@@ -256,9 +282,14 @@ export function assertPlanIsPhysical(plan: FulfillmentPlan, records: InventoryRe
   for (const [code, qty] of byWarehouse) {
     const record = records.find((r) => r.warehouseCode === code);
     if (!record) throw new Error(`Allocation references unknown warehouse ${code}`);
-    const ceiling =
-      availableToPromise(record) +
-      record.incoming.filter((i) => i.confirmed).reduce((s, i) => s + i.quantity, 0);
+    // Count only the inbound the planner is itself allowed to draw on —
+    // a ceiling that includes receipts already in the past is a weaker
+    // assertion than the code it is supposed to guard.
+    const usableInbound = record.incoming
+      .filter((i) => i.confirmed)
+      .filter((i) => !asOf || i.expectedAt.getTime() >= startOfDay(asOf).getTime())
+      .reduce((s, i) => s + i.quantity, 0);
+    const ceiling = availableToPromise(record) + usableInbound;
     if (qty > ceiling) {
       throw new Error(
         `Allocation of ${qty} at ${code} exceeds available-to-promise plus confirmed inbound (${ceiling})`,

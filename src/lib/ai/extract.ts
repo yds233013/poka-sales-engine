@@ -289,6 +289,37 @@ function extractHazardousArea(text: string): RequirementView | null {
   return null;
 }
 
+function extractCertifications(text: string): RequirementView | null {
+  const table: { pattern: RegExp; value: string }[] = [
+    { pattern: /\bapi\s*610\b/i, value: "API 610" },
+    { pattern: /\bul\s*778\b|\bul\s*listed\b/i, value: "UL 778" },
+    { pattern: /\b3-?a\s*sanitary\b/i, value: "3-A" },
+    { pattern: /\bce\s*mark(?:ed|ing)?\b/i, value: "CE" },
+  ];
+  for (const entry of table) {
+    const m = entry.pattern.exec(text);
+    if (m) {
+      return req("certifications", "Certification", "EXPLICIT", {
+        operator: "INCLUDES",
+        textValue: entry.value,
+        sourceQuote: quote(text, m.index, m[0].length),
+        note: "A named third-party certification cannot be waived at the point of sale.",
+      });
+    }
+  }
+  return null;
+}
+
+function extractIngressRating(text: string): RequirementView | null {
+  const m = /\bip\s?(\d{2})\b/i.exec(text);
+  if (!m) return null;
+  return req("ip_rating", "Ingress protection", "EXPLICIT", {
+    operator: "INCLUDES",
+    textValue: `IP${m[1]}`,
+    sourceQuote: quote(text, m.index, m[0].length),
+  });
+}
+
 function extractConnection(text: string): RequirementView | null {
   const dn = /\bdn\s*(\d{2,3})\b/i.exec(text);
   if (dn) {
@@ -512,6 +543,8 @@ export function extractRequest(text: string, context: ExtractionContext): Extrac
     extractMaterial,
     extractVoltage,
     extractHazardousArea,
+    extractCertifications,
+    extractIngressRating,
     extractConnection,
     extractSeal,
   ];

@@ -56,6 +56,7 @@ export function ResponseEditor({
         subject: draftSubject,
         body: draftBody,
         actor: user.name,
+        userId: user.id,
       });
       setSaved(result.message);
       router.refresh();

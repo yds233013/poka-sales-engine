@@ -229,28 +229,35 @@ export interface FreightQuote {
   totalCents: Cents;
   service: FreightService;
   maxTransitDays: number;
-  /** True when a faster, pricier service was required to hit the deadline. */
+  /** True only when a faster service was bought AND it makes the date. */
   expedited: boolean;
+  /** True when no service level reaches the site in time. */
+  missesDeadline: boolean;
+  estimatedArrival: Date | null;
   notes: string[];
 }
 
 // ─────────────────────────── Margin ─────────────────────────────
 
 export interface MarginResult {
+  /** Goods revenue — the quote subtotal, excluding freight. */
   revenueCents: Cents;
+  /** Cost of goods sold. */
   costCents: Cents;
-  /** Freight is treated as a cost of sale, not billed at a markup. */
+  /** Freight, billed to the customer at cost. Nets to zero in the margin. */
   freightCostCents: Cents;
   marginCents: Cents;
+  /** Margin against everything invoiced, goods plus freight. */
   marginPct: number;
-  /** Margin before freight is absorbed — useful for the operator. */
   productMarginCents: Cents;
+  /** Margin against goods revenue alone — how well the goods were sold. */
   productMarginPct: number;
 }
 
 // ───────────────────────── Approvals ────────────────────────────
 
 export type ApprovalKind =
+  | "DELIVERY_DATE_MISS"
   | "DISCOUNT_THRESHOLD"
   | "MARGIN_FLOOR"
   | "TECHNICAL_SUBSTITUTION"
@@ -271,6 +278,8 @@ export interface PolicyThresholds {
   largeQuoteCents: Cents;
   /** Margin percent below which the deal is refused outright. */
   hardMarginFloorPct: number;
+  /** Largest quantity a single factory build may be promised for. */
+  maxFactoryUnits: number;
 }
 
 export interface ApprovalRequirement {

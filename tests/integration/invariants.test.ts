@@ -38,13 +38,20 @@ describe("quote arithmetic", () => {
     }
   });
 
-  it("every quote's margin equals revenue minus cost minus freight", async () => {
+  it("every quote's margin equals goods revenue minus goods cost", async () => {
     const quotes = await db.quote.findMany();
     for (const quote of quotes) {
       const cents = (v: { toString(): string }) => Math.round(Number(v.toString()) * 100);
+      // Freight is billed at cost, so it contributes to neither side.
       expect(cents(quote.marginAmount), `margin of ${quote.quoteNumber}`).toBe(
-        cents(quote.subtotal) - cents(quote.costTotal) - cents(quote.freightCost),
+        cents(quote.subtotal) - cents(quote.costTotal),
       );
+      // And the stated percentage is that margin over everything invoiced.
+      const expectedPct =
+        Math.round(
+          (cents(quote.marginAmount) / (cents(quote.subtotal) + cents(quote.freightCost))) * 10000,
+        ) / 100;
+      expect(Number(quote.marginPct), `margin % of ${quote.quoteNumber}`).toBeCloseTo(expectedPct, 1);
     }
   });
 
@@ -219,6 +226,14 @@ describe("customer-facing output", () => {
         request.responses,
         `${request.reference} has a customer draft while ${open.length} approval(s) are open`,
       ).toHaveLength(0);
+    }
+  });
+
+  it("a quote is only marked sent on a case that was actually closed", async () => {
+    const quotes = await db.quote.findMany({ include: { request: true } });
+    for (const quote of quotes) {
+      if (quote.status !== "SENT") continue;
+      expect(quote.request.status, `${quote.quoteNumber} is sent on an open case`).toBe("COMPLETED");
     }
   });
 

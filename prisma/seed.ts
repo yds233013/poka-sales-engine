@@ -467,12 +467,10 @@ async function runScenarios(requests: Awaited<ReturnType<typeof seedRequests>>) 
     }
 
     if (request.postRun === "approve_and_complete") {
-      await prisma.salesRequest.update({ where: { id: request.id }, data: { status: "COMPLETED" } });
-      await recordAudit(prisma, request.id, {
-        type: "CASE_COMPLETED",
-        actor: "Dana Whitfield",
-        summary: "Customer accepted the quotation; order released to fulfilment. Case closed.",
-      });
+      // Through the real transition, so the quote reaches SENT the same way it
+      // would if a person clicked the button.
+      const { completeCase } = await import("../src/lib/workflow");
+      await completeCase(prisma, request.id, "Dana Whitfield");
     }
 
     if (request.postRun === "changes_requested") {

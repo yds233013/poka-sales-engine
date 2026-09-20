@@ -837,6 +837,7 @@ enum ApprovalStatus {
 }
 
 enum ApprovalKind {
+  DELIVERY_DATE_MISS
   DISCOUNT_THRESHOLD
   MARGIN_FLOOR
   TECHNICAL_SUBSTITUTION

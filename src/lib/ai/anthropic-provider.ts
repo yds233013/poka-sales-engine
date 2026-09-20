@@ -23,8 +23,6 @@ import type {
   AnalyzeRequestInput,
   DraftResponseInput,
   DraftedResponse,
-  InvestigationStep,
-  PlanInvestigationInput,
   RecommendationSummary,
   RecommendationSummaryInput,
 } from "./provider";
@@ -33,12 +31,34 @@ import type { ExtractionResult } from "./extract";
 import { MockProvider } from "./mock-provider";
 import type { RequirementView } from "@/lib/domain/types";
 
+/**
+ * Requirement keys the model is allowed to propose. Anything else is dropped:
+ * an unconstrained key can invent a dimension the compatibility engine then
+ * enforces against a number the customer never gave.
+ */
+const ALLOWED_KEYS = [
+  "max_fluid_temp_c",
+  "min_flow_m3h",
+  "min_head_m",
+  "max_pressure_bar",
+  "max_viscosity_cp",
+  "npsha_m",
+  "inlet_connection",
+  "wetted_material",
+  "motor_voltage",
+  "hazardous_area_rating",
+  "certifications",
+  "seal_type",
+  "ip_rating",
+  "length_mm",
+] as const;
+
 const requirementSchema = z.object({
-  key: z.string(),
+  key: z.enum(ALLOWED_KEYS),
   label: z.string(),
   kind: z.enum(["EXPLICIT", "INFERRED", "AMBIGUOUS", "MISSING"]),
   operator: z.enum(["GTE", "LTE", "EQ", "NEQ", "INCLUDES", "WITHIN_TOLERANCE"]).nullable().optional(),
-  numValue: z.number().nullable().optional(),
+  numValue: z.number().finite().min(-1000).max(1_000_000).nullable().optional(),
   textValue: z.string().nullable().optional(),
   unit: z.string().nullable().optional(),
   sourceQuote: z.string().nullable().optional(),
@@ -174,25 +194,27 @@ export class AnthropicProvider implements AIProvider {
       note: r.note ?? null,
     }));
 
-    // Drop anything whose quote is not actually in the message: a fabricated
-    // citation is the one failure mode that would poison the evidence trail.
+    // Drop anything that is not demonstrably grounded in the message. A
+    // fabricated citation is the one failure mode that would poison the
+    // evidence trail — and an omitted one is the same failure with less
+    // effort, so a missing quote is treated as ungrounded rather than waved
+    // through. AMBIGUOUS proposals are exempt: by definition they report that
+    // something was implied rather than stated, and they can never satisfy a
+    // rule, only force a human to look.
     const haystack = `${input.subject} ${input.body}`.toLowerCase();
-    const grounded = proposed.filter(
-      (r) => !r.sourceQuote || haystack.includes(r.sourceQuote.toLowerCase().slice(0, 40)),
-    );
+    const grounded = proposed.filter((r) => {
+      if (r.kind === "AMBIGUOUS" || r.kind === "MISSING") return true;
+      if (!r.sourceQuote) return false;
+      // Match the whole quote, not a truncated prefix — anything appended past
+      // the cut would otherwise ride along unverified.
+      return haystack.includes(r.sourceQuote.toLowerCase().trim());
+    });
 
     return {
       ...deterministic,
       requirements: mergeRequirements(deterministic.requirements, grounded),
       openQuestions: [...new Set([...deterministic.openQuestions, ...parsed.openQuestions])],
     };
-  }
-
-  async planInvestigation(input: PlanInvestigationInput): Promise<InvestigationStep[]> {
-    // The investigation plan is a fixed pipeline by design — the value of a
-    // deterministic tool order is that the audit trail is comparable across
-    // cases. The model is not consulted here.
-    return this.fallback.planInvestigation(input);
   }
 
   async summarizeRecommendation(
@@ -231,8 +253,10 @@ export class AnthropicProvider implements AIProvider {
     const parsed = this.parseJson(await this.call(system, user), summarySchema);
     if (!parsed) return baseline;
 
-    // Guard: a rationale that leaks internal commercial language is discarded.
-    if (/\bmargin\b|\bcost\b|\bmark-?up\b/i.test(parsed.rationale)) return baseline;
+    // Guard: internal commercial language in either field discards the whole
+    // response in favour of the deterministic one.
+    const leak = /\bmargin\b|\bcost\b|\bmark-?up\b/i;
+    if (leak.test(parsed.rationale) || leak.test(parsed.headline)) return baseline;
     return parsed;
   }
 
@@ -276,9 +300,8 @@ export class AnthropicProvider implements AIProvider {
     if (!parsed) return baseline;
 
     // Guard: never let an internal figure reach a customer-facing draft.
-    if (/\bmargin\b|\bgross profit\b|\bstandard cost\b|\bour cost\b/i.test(parsed.body)) {
-      return baseline;
-    }
+    const leak = /\bmargin\b|\bgross profit\b|\bstandard cost\b|\bour cost\b|\bcost of goods\b/i;
+    if (leak.test(parsed.body) || leak.test(parsed.subject)) return baseline;
     return parsed;
   }
 }

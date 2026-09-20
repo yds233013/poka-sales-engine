@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/primitives";
 import { EvidenceList, type EvidenceView } from "@/components/evidence";
 import { CheckMatrix, type CheckView } from "./check-matrix";
+import { RepriceControl } from "./reprice-control";
 import { dateTime, money, pct, shortDate, titleCase, duration, dayMonth } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
@@ -469,7 +470,11 @@ export function FulfillmentPanel({
 export function CommercialsPanel({
   quote,
   marginFloorPct,
+  requestId,
+  repriceDisabledReason,
 }: {
+  requestId: string;
+  repriceDisabledReason?: string;
   quote: {
     quoteNumber: string;
     status: string;
@@ -567,7 +572,9 @@ export function CommercialsPanel({
           </div>
           <div className="mt-1">
             <DataRow label="Cost of goods" mono>{money(quote.costTotal)}</DataRow>
-            <DataRow label="Freight absorbed" mono>{money(quote.freightCost)}</DataRow>
+            <DataRow label="Freight (billed at cost)" mono>
+              <span className="text-ink-500">{money(quote.freightCost)}</span>
+            </DataRow>
             <DataRow label="Gross margin" mono>{money(quote.marginAmount)}</DataRow>
             <div className="mt-1 border-t border-[var(--hairline)] pt-1">
               <DataRow label={<span className="font-medium text-ink-800">Margin %</span>} mono>
@@ -582,6 +589,13 @@ export function CommercialsPanel({
           </div>
         </dl>
       </div>
+
+      <RepriceControl
+        requestId={requestId}
+        currentDiscountPct={quote.items[0]?.discountPct ?? 0}
+        disabled={Boolean(repriceDisabledReason)}
+        disabledReason={repriceDisabledReason}
+      />
     </Panel>
   );
 }

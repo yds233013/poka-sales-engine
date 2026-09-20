@@ -14,8 +14,6 @@ import type {
   AnalyzeRequestInput,
   DraftResponseInput,
   DraftedResponse,
-  InvestigationStep,
-  PlanInvestigationInput,
   RecommendationSummary,
   RecommendationSummaryInput,
 } from "./provider";
@@ -56,25 +54,6 @@ export class MockProvider implements AIProvider {
 
   async analyzeRequest(input: AnalyzeRequestInput): Promise<ExtractionResult> {
     return extractRequest(`${input.subject}. ${input.body}`, input.context);
-  }
-
-  async planInvestigation(input: PlanInvestigationInput): Promise<InvestigationStep[]> {
-    const steps: InvestigationStep[] = [];
-    steps.push({ tool: "resolve_customer", purpose: "Identify the account, site and contact behind the message" });
-    if (input.hasIncumbentSku) {
-      steps.push({ tool: "resolve_sku", purpose: "Confirm the referenced part number exists in the catalog" });
-      steps.push({ tool: "search_technical_docs", purpose: "Pull the published limits of the referenced part" });
-    } else {
-      steps.push({ tool: "search_catalog", purpose: "Find catalog items matching the stated requirements" });
-    }
-    steps.push({ tool: "check_compatibility", purpose: "Test the referenced part against every extracted requirement" });
-    steps.push({ tool: "find_substitutes", purpose: "Evaluate alternatives where the referenced part does not qualify" });
-    steps.push({ tool: "check_inventory", purpose: "Establish available-to-promise and a fulfillment plan" });
-    steps.push({ tool: "calculate_price", purpose: "Apply contract, price book and volume terms" });
-    steps.push({ tool: "calculate_freight", purpose: "Rate each shipping leg to the destination" });
-    steps.push({ tool: "check_margin", purpose: "Compute gross margin after freight" });
-    steps.push({ tool: "evaluate_approvals", purpose: "Test the finished deal against commercial and technical policy" });
-    return steps;
   }
 
   async summarizeRecommendation(

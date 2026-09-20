@@ -58,8 +58,10 @@ export async function decideApproval(prisma: PrismaClient, input: ApprovalDecisi
     );
   }
 
-  await prisma.approval.update({
-    where: { id: approval.id },
+  // Conditional write: two people deciding at once must not both succeed and
+  // have the later one silently win. The status guard is part of the WHERE.
+  const written = await prisma.approval.updateMany({
+    where: { id: approval.id, status: { in: ["PENDING", "CHANGES_REQUESTED"] } },
     data: {
       status: input.decision,
       decidedById: user.id,
@@ -67,6 +69,9 @@ export async function decideApproval(prisma: PrismaClient, input: ApprovalDecisi
       decisionNote: input.note?.trim() || null,
     },
   });
+  if (written.count === 0) {
+    throw new WorkflowError("This approval was decided by someone else a moment ago.");
+  }
 
   await recordAudit(prisma, approval.requestId, {
     type:
@@ -124,6 +129,8 @@ export interface ReleaseOptions {
   actor: string;
   actorId?: string | null;
   asOf?: Date;
+  /** Appended to the audit entry — e.g. why no approval was needed. */
+  note?: string;
 }
 
 /**
@@ -173,7 +180,9 @@ export async function releaseQuote(
     type: "QUOTE_RELEASED",
     actor: options.actor,
     actorId: options.actorId ?? null,
-    summary: `Quote ${quote.quoteNumber} released for ${formatMoney(quote.total)}.`,
+    summary: `Quote ${quote.quoteNumber} released for ${formatMoney(quote.total)}.${
+      options.note ? ` ${options.note}` : ""
+    }`,
     detail: { quoteNumber: quote.quoteNumber, total: quote.total.toString() },
   });
 
@@ -186,16 +195,93 @@ export async function releaseQuote(
   return quote.id;
 }
 
+/**
+ * Save an edited customer response.
+ *
+ * The editor is disabled in the UI while approvals are open; this re-checks it
+ * server-side, because the UI lock is a courtesy and this is the control. The
+ * acting user is resolved against the user table rather than trusted as a
+ * free-text name, so the audit entry names a real person.
+ */
+/**
+ * Re-run the case with a rep-entered discount off list.
+ *
+ * The pricing engine has always supported a manual override; there was no way
+ * to reach it, which made an entire documented branch untestable in the
+ * product. Repricing re-runs the whole investigation, so the approval engine
+ * sees the new number and raises whatever the discount now requires — which is
+ * the point: a rep cannot discount their way past a threshold, only into one.
+ */
+export async function repriceQuote(
+  prisma: PrismaClient,
+  requestId: string,
+  input: { discountPct: number; actor: string; actorId?: string | null },
+) {
+  if (!Number.isFinite(input.discountPct) || input.discountPct < 0 || input.discountPct > 95) {
+    throw new WorkflowError("A manual discount must be between 0% and 95%.");
+  }
+
+  const request = await prisma.salesRequest.findUniqueOrThrow({
+    where: { id: requestId },
+    include: { quotes: { take: 1 } },
+  });
+  if (request.status === "COMPLETED") {
+    throw new WorkflowError("This case is closed and cannot be repriced.");
+  }
+  if (request.quotes.length === 0) {
+    throw new WorkflowError("There is no quote on this case to reprice.");
+  }
+
+  const { runSalesRequest } = await import("@/lib/agent/orchestrator");
+  await runSalesRequest(prisma, requestId, { manualDiscountPct: input.discountPct });
+
+  await recordAudit(prisma, requestId, {
+    type: "QUOTE_REPRICED",
+    actor: input.actor,
+    actorId: input.actorId ?? null,
+    summary: `Repriced at a manual ${input.discountPct}% off list. Approvals re-evaluated against the new figures.`,
+    detail: { discountPct: input.discountPct },
+  });
+}
+
 export async function saveCustomerResponse(
   prisma: PrismaClient,
   requestId: string,
-  input: { subject: string; body: string; actor: string },
+  input: { subject: string; body: string; actor: string; userId?: string | null },
 ) {
+  const request = await prisma.salesRequest.findUniqueOrThrow({
+    where: { id: requestId },
+    include: { approvals: true, quotes: { take: 1 } },
+  });
+
+  // A clarification letter on a case with no quote is always editable — there
+  // is no offer in it. An offer is only editable once nothing is outstanding.
+  if (request.quotes.length > 0) {
+    const open = request.approvals.filter(
+      (a) => a.status === "PENDING" || a.status === "CHANGES_REQUESTED",
+    );
+    if (open.length > 0) {
+      throw new WorkflowError(
+        `Cannot edit the customer response while ${open.length} approval(s) are open — ${open
+          .map((a) => a.title)
+          .join("; ")}`,
+      );
+    }
+    if (request.approvals.some((a) => a.status === "REJECTED")) {
+      throw new WorkflowError(
+        "An approval on this case was refused. The customer response cannot be edited or sent.",
+      );
+    }
+  }
+
   const latest = await prisma.customerResponse.findFirst({
     where: { requestId },
     orderBy: { version: "desc" },
   });
   if (!latest) throw new WorkflowError("There is no draft to edit on this case.");
+
+  const user = input.userId ? await prisma.user.findUnique({ where: { id: input.userId } }) : null;
+  const actor = user?.name ?? input.actor;
 
   await prisma.customerResponse.create({
     data: {
@@ -208,23 +294,35 @@ export async function saveCustomerResponse(
   });
   await recordAudit(prisma, requestId, {
     type: "RESPONSE_EDITED",
-    actor: input.actor,
+    actor,
+    actorId: user?.id ?? null,
     summary: `Customer response edited (version ${latest.version + 1}).`,
   });
 }
 
 export async function completeCase(prisma: PrismaClient, requestId: string, actor: string) {
-  const request = await prisma.salesRequest.findUniqueOrThrow({ where: { id: requestId } });
+  const request = await prisma.salesRequest.findUniqueOrThrow({
+    where: { id: requestId },
+    include: { quotes: { orderBy: { createdAt: "desc" }, take: 1 } },
+  });
   if (request.status !== "RESPONSE_READY") {
     throw new WorkflowError(
       "A case can only be completed once the customer response is ready to send.",
     );
   }
+
   await prisma.salesRequest.update({ where: { id: requestId }, data: { status: "COMPLETED" } });
+  // Closing the case means the quotation went out. Leaving it APPROVED would
+  // make "released but never sent" and "sent to the customer" indistinguishable.
+  if (request.quotes[0]) {
+    await prisma.quote.update({ where: { id: request.quotes[0].id }, data: { status: "SENT" } });
+  }
   await recordAudit(prisma, requestId, {
     type: "CASE_COMPLETED",
     actor,
-    summary: "Case closed.",
+    summary: request.quotes[0]
+      ? `Quotation ${request.quotes[0].quoteNumber} sent to the customer. Case closed.`
+      : "Case closed.",
   });
 }
 

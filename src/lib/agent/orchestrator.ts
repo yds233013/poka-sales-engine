@@ -27,7 +27,7 @@ import type {
   ProductView,
   RequirementView,
 } from "@/lib/domain/types";
-import { recomputeVerdict } from "@/lib/engines/compatibility";
+import { assertNotBlocked, containsTokens, recomputeVerdict } from "@/lib/engines/compatibility";
 import { rankCandidates, selectedCandidate, type RankableCandidate, type RankedCandidate } from "@/lib/engines/substitution";
 import { computeQuoteTotals, assertTotalsConsistent } from "@/lib/engines/pricing";
 import { canAutoRelease, deriveRisk } from "@/lib/engines/approval";
@@ -139,17 +139,21 @@ export async function runSalesRequest(
     // ── 3. Resolve part numbers ────────────────────────────────────────────
     let incumbent: ProductView | null = null;
     const unresolvedSkus: string[] = [];
+    const resolvedSkus: string[] = [];
 
     for (const item of analysis.items) {
       if (!item.sku) continue;
       const resolved = await resolveSku(bus, { rawSku: item.sku });
-      if (resolved.found && resolved.productId && !incumbent) {
-        const row = await prisma.product.findUniqueOrThrow({
-          where: { id: resolved.productId },
-          include: PRODUCT_INCLUDE,
-        });
-        incumbent = toProductView(row);
-      } else if (!resolved.found) {
+      if (resolved.found && resolved.productId) {
+        resolvedSkus.push(resolved.sku!);
+        if (!incumbent) {
+          const row = await prisma.product.findUniqueOrThrow({
+            where: { id: resolved.productId },
+            include: PRODUCT_INCLUDE,
+          });
+          incumbent = toProductView(row);
+        }
+      } else {
         unresolvedSkus.push(item.sku);
       }
     }
@@ -187,7 +191,13 @@ export async function runSalesRequest(
     });
 
     // ── 5. Can this be worked at all? ──────────────────────────────────────
-    const blockingGaps = gapsThatBlock(requirements, incumbent, quantity, unresolvedSkus);
+    const blockingGaps = gapsThatBlock(
+      requirements,
+      incumbent,
+      quantity,
+      unresolvedSkus,
+      resolvedSkus.length,
+    );
     if (blockingGaps.length > 0) {
       return await finishAsInformationRequired(
         prisma, bus, run.id, requestId, provider, account, analysis.openQuestions, blockingGaps,
@@ -261,6 +271,13 @@ export async function runSalesRequest(
     }
 
     const winningEval = evaluated.find((e) => e.source.product.id === winner.productId)!;
+
+    // Last gate before anything commercial happens. The ranking engine already
+    // refuses to promote a blocked candidate; this is the independent check on
+    // the path to a quote, and it throws rather than returning a flag so it
+    // cannot be read and ignored.
+    assertNotBlocked(winner.verdict);
+
     const isSubstitution = Boolean(incumbent && incumbent.id !== winner.productId);
 
     // ── 9. Commercials ─────────────────────────────────────────────────────
@@ -327,8 +344,14 @@ export async function runSalesRequest(
       substitutedToSku: winner.sku,
       plan: winner.plan,
       freightExpedited: freight.quote.expedited,
+      freightMissesDeadline: freight.quote.missesDeadline,
+      estimatedArrival: freight.estimatedDelivery ? new Date(freight.estimatedDelivery) : null,
+      requiredBy,
       freightCents: freight.quote.totalCents,
       unresolvedRequirements: unresolved,
+      inferredRequirements: requirements
+        .filter((r) => r.kind === "INFERRED")
+        .map((r) => r.label.toLowerCase()),
     });
 
     // ── 11. Persist ────────────────────────────────────────────────────────
@@ -439,25 +462,27 @@ export async function runSalesRequest(
       detail: { outcome, quoteNumber: quote.quoteNumber, approvals: approvals.length },
     });
 
-    const autoRelease = canAutoRelease(approvals);
-    const status = autoRelease ? "RESPONSE_READY" : "READY_FOR_APPROVAL";
-
-    if (autoRelease) {
-      await recordAudit(prisma, requestId, {
-        type: "QUOTE_RELEASED",
-        actor: "Poka Sales Engine",
-        summary: `Quote ${quote.quoteNumber} released without approval — every policy check was inside limits.`,
-        detail: { quoteNumber: quote.quoteNumber, total: quote.total.toString() },
-      });
-      await generateCustomerResponse(prisma, requestId, asOf);
-    }
-
     await prisma.salesRequest.update({
       where: { id: requestId },
-      data: { status, risk, blockedReason: null },
+      data: { status: "READY_FOR_APPROVAL", risk, blockedReason: null },
     });
 
+    // A deal that cleared every policy check still goes out through the one
+    // release function, rather than a shortcut beside it. That function owns
+    // the gate, the quote status and the audit entry, and having a second path
+    // that sets those by hand is how the two drift apart.
+    const autoRelease = canAutoRelease(approvals);
+    if (autoRelease) {
+      const { releaseQuote } = await import("@/lib/workflow");
+      await releaseQuote(prisma, requestId, {
+        actor: "Poka Sales Engine",
+        asOf,
+        note: "Released without approval — every policy check was inside limits.",
+      });
+    }
+
     await finishRun(prisma, run.id, bus, startedAt, "COMPLETED");
+    const status = autoRelease ? "RESPONSE_READY" : "READY_FOR_APPROVAL";
 
     return {
       runId: run.id,
@@ -478,14 +503,21 @@ export async function runSalesRequest(
         trace: bus.calls as object[],
       },
     });
+    // NEEDS_REVIEW, not BLOCKED. BLOCKED means "the engine refused to
+    // recommend anything because nothing is safe"; a crash is a different
+    // thing and must not masquerade as a safety verdict.
     await prisma.salesRequest.update({
       where: { id: requestId },
-      data: { status: "BLOCKED", risk: "BLOCKED", blockedReason: message },
+      data: {
+        status: "NEEDS_REVIEW",
+        risk: "HIGH",
+        blockedReason: `Analysis did not complete: ${message.split("\n")[0]}. Re-run it, or work the case by hand.`,
+      },
     });
     await recordAudit(prisma, requestId, {
       type: "RUN_FAILED",
       actor: "Poka Sales Engine",
-      summary: `Analysis stopped: ${message}`,
+      summary: `Analysis stopped: ${message.split("\n")[0]}`,
     });
     throw error;
   }
@@ -512,8 +544,14 @@ function gapsThatBlock(
   incumbent: ProductView | null,
   quantity: number | null,
   unresolvedSkus: string[],
+  resolvedSkuCount = 1,
 ): string[] {
   const gaps: string[] = [];
+  // This build quotes one line per case. Collapsing "2 × PX-440 and 3 × AX-220"
+  // into five of the first part is a silent mis-quote, so it stops instead.
+  if (resolvedSkuCount > 1) {
+    gaps.push("multiple line items");
+  }
   if (!quantity || quantity <= 0) gaps.push("quantity");
   if (!incumbent) {
     // Without a named part, there must be enough technical detail to select on.
@@ -626,29 +664,87 @@ async function evaluateWithAdapter(
     requirements,
   });
 
-  if (!source.adapter) return verdict;
+  const adapter = source.adapter;
+  if (!adapter) return verdict;
 
-  const provides = source.adapter.specs.provides_connection?.textValue;
+  const provides = adapter.specs.provides_connection?.textValue;
   if (!provides) return verdict;
 
   const connectionCheck = verdict.checks.find((c) => c.dimension === "connection");
   if (!connectionCheck || connectionCheck.result !== "FAIL") return verdict;
 
   const required = requirements.find((r) => r.key === "inlet_connection")?.textValue ?? "";
-  const adapterCovers = provides.toLowerCase().includes(required.toLowerCase());
-  if (!required || !adapterCovers) return verdict;
+  if (!required) return verdict;
+
+  // An adapter may only rescue a connection failure if the whole assembly
+  // stands up. Three things have to hold, and an earlier version checked only
+  // the first — and checked it with a raw substring match, so "DN50" matched
+  // "DN500".
+  //
+  //   1. it presents the size the site actually has;
+  //   2. it mates with this pump's connection;
+  //   3. its own pressure and temperature ratings clear the duty — the
+  //      assembly is only as strong as its weakest part, and the HARD rules
+  //      were evaluated against the pump, not the adapter.
+  const pumpConnection = source.product.specs.inlet_connection?.textValue ?? "";
+  const presentsRequired = containsTokens(provides, required);
+  const matesWithPump = pumpConnection
+    ? provides
+        .split(/\s+/)
+        .some((token: string) => token.length > 2 && containsTokens(pumpConnection, token))
+    : false;
+
+  const dutyTemp = requirements.find((r) => r.key === "max_fluid_temp_c");
+  const dutyPressure = requirements.find((r) => r.key === "max_pressure_bar");
+  const adapterTemp = adapter.specs.max_fluid_temp_c?.numValue ?? null;
+  const adapterPressure = adapter.specs.max_pressure_bar?.numValue ?? null;
+
+  const ratingShortfalls: string[] = [];
+  if (dutyTemp?.kind === "EXPLICIT" && dutyTemp.numValue != null) {
+    if (adapterTemp == null) {
+      ratingShortfalls.push(`${adapter.sku} does not publish a temperature rating`);
+    } else if (adapterTemp < dutyTemp.numValue) {
+      ratingShortfalls.push(
+        `${adapter.sku} is rated to ${adapterTemp} °C against a ${dutyTemp.numValue} °C duty`,
+      );
+    }
+  }
+  if (dutyPressure?.kind === "EXPLICIT" && dutyPressure.numValue != null) {
+    if (adapterPressure == null) {
+      ratingShortfalls.push(`${adapter.sku} does not publish a pressure rating`);
+    } else if (adapterPressure < dutyPressure.numValue) {
+      ratingShortfalls.push(
+        `${adapter.sku} is rated to ${adapterPressure} bar against a ${dutyPressure.numValue} bar duty`,
+      );
+    }
+  }
+
+  if (!presentsRequired || !matesWithPump || ratingShortfalls.length > 0) {
+    // The adapter does not rescue this one. Leave the hard failure standing
+    // and say why the accessory was not enough.
+    connectionCheck.detail = `${connectionCheck.detail} The ${adapter.sku} adapter kit was considered and does not resolve it: ${
+      ratingShortfalls.length > 0
+        ? ratingShortfalls.join("; ")
+        : !presentsRequired
+          ? `it presents ${provides}, not ${required}`
+          : `it does not mate with the ${source.product.sku}'s ${pumpConnection}`
+    }.`;
+    return verdict;
+  }
 
   await applyAdapter(bus, {
     productSku: source.product.sku,
-    adapterSku: source.adapter.sku,
+    adapterSku: adapter.sku,
     requiredConnection: required,
     providedConnection: connectionCheck.actual,
-    adapterPressureBar: source.adapter.specs.max_pressure_bar?.numValue ?? null,
-    adapterTempC: source.adapter.specs.max_fluid_temp_c?.numValue ?? null,
+    adapterPressureBar: adapterPressure,
+    adapterTempC: adapterTemp,
+    dutyPressureBar: dutyPressure?.numValue ?? null,
+    dutyTempC: dutyTemp?.numValue ?? null,
   });
 
   connectionCheck.result = "PASS";
-  connectionCheck.detail = `${source.product.sku} presents ${connectionCheck.actual}, which does not match ${connectionCheck.requirement} directly. The ${source.adapter.sku} adapter kit (rated ${source.adapter.specs.max_pressure_bar?.numValue} bar, ${source.adapter.specs.max_fluid_temp_c?.numValue} °C) adapts it to ${provides}.`;
+  connectionCheck.detail = `${source.product.sku} presents ${connectionCheck.actual}, which does not match ${connectionCheck.requirement} directly. The ${adapter.sku} adapter kit adapts it to ${provides}, and the kit's own ratings (${adapterPressure ?? "—"} bar, ${adapterTemp ?? "—"} °C) clear this duty.`;
 
   const warning = {
     dimension: "accessory",
@@ -656,8 +752,8 @@ async function evaluateWithAdapter(
     result: "WARNING" as const,
     severity: "SOFT" as const,
     requirement: `direct fit to ${required}`,
-    actual: `fits via ${source.adapter.sku}`,
-    detail: `This selection only lands on the existing pipework with ${source.adapter.sku} adapter kits fitted at suction and discharge. That adds installed length and raises suction velocity — confirm against the site before committing.`,
+    actual: `fits via ${adapter.sku}`,
+    detail: `This selection only lands on the existing pipework with ${adapter.sku} adapter kits fitted at suction and discharge. That adds installed length and raises suction velocity — confirm against the site before committing.`,
     ruleCode: "ADAPTER",
   };
   verdict.checks.push(warning);
@@ -795,10 +891,30 @@ interface CreateQuoteArgs {
   asOf: Date;
 }
 
+const QUOTE_NUMBER_SEED = 1040;
+
+/**
+ * Next quote number.
+ *
+ * Derived from the highest number already issued, never from a row count. A
+ * count breaks the moment anything is deleted — and re-running a case deletes
+ * its own quote first, which made "Re-run analysis" mint a number that already
+ * belonged to another case and hard-fail on the unique constraint.
+ */
+async function nextQuoteNumber(prisma: PrismaClient, year: number): Promise<string> {
+  const latest = await prisma.quote.findFirst({
+    where: { quoteNumber: { startsWith: `QT-${year}-` } },
+    orderBy: { quoteNumber: "desc" },
+    select: { quoteNumber: true },
+  });
+  const highest = latest ? Number(latest.quoteNumber.split("-")[2]) : QUOTE_NUMBER_SEED - 1;
+  const next = Number.isFinite(highest) ? highest + 1 : QUOTE_NUMBER_SEED;
+  return `QT-${year}-${String(Math.max(next, QUOTE_NUMBER_SEED)).padStart(4, "0")}`;
+}
+
 async function createQuote(prisma: PrismaClient, args: CreateQuoteArgs) {
   const year = args.asOf.getUTCFullYear();
-  const count = await prisma.quote.count();
-  const quoteNumber = `QT-${year}-${String(1040 + count).padStart(4, "0")}`;
+  const quoteNumber = await nextQuoteNumber(prisma, year);
   const validUntil = new Date(args.asOf.getTime() + QUOTE_VALID_DAYS * 86400000);
 
   return prisma.quote.create({
@@ -807,9 +923,7 @@ async function createQuote(prisma: PrismaClient, args: CreateQuoteArgs) {
       requestId: args.requestId,
       customerId: args.customerId,
       siteId: args.siteId,
-      // Nothing in policy stopped this one, so it is released on creation —
-      // leaving it DRAFT would contradict the case status the operator sees.
-      status: args.pendingApproval ? "PENDING_APPROVAL" : "APPROVED",
+      status: args.pendingApproval ? "PENDING_APPROVAL" : "DRAFT",
       subtotal: centsToNumber(args.totals.subtotalCents),
       discountTotal: centsToNumber(args.totals.discountTotalCents),
       freightCost: centsToNumber(args.totals.freightCents),
@@ -986,6 +1100,8 @@ function summariseBlockingGaps(ranked: RankedCandidate[]): string[] {
 
 function gapToQuestion(gap: string): string {
   if (gap === "quantity") return "How many units are required?";
+  if (gap === "multiple line items")
+    return "This enquiry covers more than one part number. Could you send each line as a separate request? This system quotes one line at a time, and I would rather ask than quote the wrong quantity against the wrong part.";
   if (gap.startsWith("duty conditions"))
     return "What are the duty conditions — flow, head, fluid and operating temperature? Without a part number we cannot select on the description alone.";
   if (gap.startsWith("part number"))
@@ -1135,17 +1251,45 @@ export async function generateCustomerResponse(
 
   const availability: string[] = [];
   if (line) {
-    const allocations = line.allocations as { warehouseName: string; quantity: number; readyDate: string }[];
+    const allocations = line.allocations as {
+      warehouseName: string;
+      quantity: number;
+      readyDate: string;
+      source: string;
+    }[];
     for (const allocation of allocations) {
+      const units = `${allocation.quantity} unit${allocation.quantity === 1 ? "" : "s"}`;
+      const date = allocation.readyDate.slice(0, 10);
+      // Say what each source actually is. Describing an unreceived purchase
+      // order, or a part that has not been built, as stock in our warehouse is
+      // the sort of thing a customer discovers on the delivery date.
+      if (allocation.source === "STOCK") {
+        availability.push(`${units} in stock at our ${allocation.warehouseName}, ready to ship ${date}`);
+      } else if (allocation.source === "INCOMING") {
+        availability.push(
+          `${units} against a confirmed inbound delivery into our ${allocation.warehouseName}, ready to ship ${date} once received`,
+        );
+      } else {
+        availability.push(`${units} built to order, ready to ship ${date}`);
+      }
+    }
+    if (allocations.length > 1) {
       availability.push(
-        `${allocation.quantity} unit${allocation.quantity === 1 ? "" : "s"} from our ${allocation.warehouseName}, ready to ship ${allocation.readyDate.slice(0, 10)}`,
+        "These arrive as separate deliveries — the later date above is the one to plan around.",
       );
     }
   }
 
+  // Customer-safe phrasing only. `check.detail` carries the internal rule
+  // explanation ("beyond the limit the pump stalls or the motor overloads"),
+  // which is written for an application engineer, not for the buyer.
   const technicalNotes = (winner?.checks ?? [])
     .filter((c) => c.result === "WARNING" || c.result === "UNKNOWN")
-    .map((c) => c.detail);
+    .map((c) =>
+      c.result === "UNKNOWN"
+        ? `${c.label}: we have assumed ${c.requirement}. Please confirm this against the installation.`
+        : `${c.label}: the proposed part offers ${c.actual} against ${c.requirement} on the existing installation. Worth confirming before the order is placed.`,
+    );
 
   const requirements = await prisma.requirement.findMany({ where: { requestId } });
   const openQuestions = requirements

@@ -27,17 +27,6 @@ export interface AnalyzeRequestInput {
   context: ExtractionContext;
 }
 
-export interface InvestigationStep {
-  tool: string;
-  purpose: string;
-}
-
-export interface PlanInvestigationInput {
-  analysis: ExtractionResult;
-  hasIncumbentSku: boolean;
-  hasCustomer: boolean;
-}
-
 export interface RecommendationSummaryInput {
   outcome:
     | "EXACT_MATCH"
@@ -96,7 +85,13 @@ export interface AIProvider {
   /** True when the provider reaches an external service. */
   readonly remote: boolean;
   analyzeRequest(input: AnalyzeRequestInput): Promise<ExtractionResult>;
-  planInvestigation(input: PlanInvestigationInput): Promise<InvestigationStep[]>;
+  /**
+   * Note there is no `planInvestigation`. The tool order is fixed in the
+   * orchestrator on purpose: a deterministic pipeline makes two cases
+   * comparable in the audit trail and removes any path by which the
+   * compatibility or approval step could be skipped. Letting a model choose
+   * the order would trade both away for flexibility this domain does not need.
+   */
   summarizeRecommendation(input: RecommendationSummaryInput): Promise<RecommendationSummary>;
   draftCustomerResponse(input: DraftResponseInput): Promise<DraftedResponse>;
 }

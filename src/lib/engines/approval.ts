@@ -29,6 +29,7 @@ export const DEFAULT_THRESHOLDS: PolicyThresholds = {
   minMarginPct: 22,
   largeQuoteCents: 5_000_000, // $50,000
   hardMarginFloorPct: 8,
+  maxFactoryUnits: 250,
 };
 
 export interface ApprovalEvaluationInput {
@@ -44,9 +45,20 @@ export interface ApprovalEvaluationInput {
   substitutedToSku?: string | null;
   plan?: FulfillmentPlan | null;
   freightExpedited: boolean;
+  /** True when no service level reaches the site by the requested date. */
+  freightMissesDeadline?: boolean;
+  /** Estimated arrival and the date the customer asked for, when both exist. */
+  estimatedArrival?: Date | null;
+  requiredBy?: Date | null;
   freightCents: Cents;
   /** Requirements the extraction step could not resolve. */
   unresolvedRequirements: string[];
+  /**
+   * Requirements derived from the part the customer already runs rather than
+   * stated by them. They are enforced as hard constraints, so an approver
+   * needs to see which ones the selection actually rests on.
+   */
+  inferredRequirements?: string[];
 }
 
 function discountRequirement(
@@ -87,7 +99,7 @@ function marginRequirement(input: ApprovalEvaluationInput): ApprovalRequirement 
       ? `Margin of ${formatPct(margin.marginPct)} falls under the hard floor of ${formatPct(thresholds.hardMarginFloorPct, 0)}. Deals under the floor require commercial director sign-off, not sales management.`
       : `Margin of ${formatPct(margin.marginPct)} falls under the policy minimum of ${formatPct(thresholds.minMarginPct, 0)}.`,
     proposedAction: `Release the quote at ${formatCurrency(input.quoteTotalCents)} yielding ${formatCurrency(margin.marginCents)} gross margin.`,
-    commercialImpact: `Revenue ${formatCurrency(margin.revenueCents)}, product cost ${formatCurrency(margin.costCents)}, freight absorbed ${formatCurrency(margin.freightCostCents)}. Margin before freight is ${formatPct(margin.productMarginPct)}.`,
+    commercialImpact: `Goods revenue ${formatCurrency(margin.revenueCents)} against ${formatCurrency(margin.costCents)} cost, giving ${formatCurrency(margin.marginCents)} — ${formatPct(margin.productMarginPct)} on the goods. Freight of ${formatCurrency(margin.freightCostCents)} is billed at cost and carries no margin, so the figure against total invoiced value is ${formatPct(margin.marginPct)}.`,
     technicalImpact: "None — this is a commercial threshold only.",
     riskNote: belowHardFloor
       ? "Below-floor deals are loss-leading after selling cost. Requires an explicit strategic reason."
@@ -126,9 +138,16 @@ function substitutionRequirement(
           .join(", ")}.`,
     proposedAction: `Quote ${input.substitutedToSku} in place of ${input.substitutedFromSku}.`,
     commercialImpact: `Quote value ${formatCurrency(input.quoteTotalCents)} at ${formatPct(input.margin.marginPct)} margin.`,
-    technicalImpact: clean
-      ? "All hard compatibility checks pass against the extracted requirements."
-      : [...warnings, ...unknowns].map((c) => `${c.label}: ${c.detail}`).join(" "),
+    technicalImpact: [
+      clean
+        ? "All hard compatibility checks pass against the extracted requirements."
+        : [...warnings, ...unknowns].map((c) => `${c.label}: ${c.detail}`).join(" "),
+      input.inferredRequirements && input.inferredRequirements.length > 0
+        ? `Note that ${input.inferredRequirements.length} of those requirements were derived from the ${input.substitutedFromSku} rather than stated by the customer (${input.inferredRequirements.join(", ")}). If anything about the installation has changed, the selection changes with it.`
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" "),
     riskNote: clean
       ? "Customer may have a qualification or spare-parts reason for the original part number."
       : "An unverified dimension on a process pump can mean a failed installation and a warranty claim. Confirm against the site's actual duty conditions.",
@@ -137,6 +156,7 @@ function substitutionRequirement(
       to: input.substitutedToSku,
       warnings: warnings.map((w) => ({ label: w.label, detail: w.detail })),
       unknowns: unknowns.map((u) => ({ label: u.label, detail: u.detail })),
+      inferredRequirements: input.inferredRequirements ?? [],
     },
   };
 }
@@ -177,11 +197,51 @@ function freightRequirement(input: ApprovalEvaluationInput): ApprovalRequirement
     reason:
       "Ground service would arrive after the customer's requested date, so the quote is rated at an expedited service level.",
     proposedAction: `Absorb ${formatCurrency(input.freightCents)} of expedited freight into the quote.`,
-    commercialImpact: `Freight is carried as a cost of sale and reduces gross margin to ${formatPct(input.margin.marginPct)}.`,
+    commercialImpact: `Freight is billed to the customer at cost, so it carries no margin: the extra ${formatCurrency(input.freightCents)} lands on the customer's invoice, not on ours. Deal margin is ${formatPct(input.margin.marginPct)}.`,
     technicalImpact: "None.",
     riskNote:
       "If the customer will accept a later date, ground service recovers the freight difference.",
     context: { freightCents: input.freightCents, marginPct: input.margin.marginPct },
+  };
+}
+
+/**
+ * The quote will arrive after the date the customer gave.
+ *
+ * This used to surface only as a side effect of a freight upgrade, which meant
+ * a lane with no expedited service produced a letter promising a late date
+ * with nobody in the loop. Lateness is a commitment a person makes, not a
+ * calculation, so it gets its own requirement.
+ */
+function deadlineRequirement(input: ApprovalEvaluationInput): ApprovalRequirement | null {
+  const late =
+    input.freightMissesDeadline === true ||
+    input.plan?.meetsDeadline === false ||
+    Boolean(
+      input.estimatedArrival &&
+        input.requiredBy &&
+        input.estimatedArrival.getTime() > input.requiredBy.getTime(),
+    );
+  if (!late) return null;
+
+  const arrival = input.estimatedArrival?.toISOString().slice(0, 10) ?? "an unconfirmed date";
+  const wanted = input.requiredBy?.toISOString().slice(0, 10) ?? "the requested date";
+
+  return {
+    kind: "DELIVERY_DATE_MISS",
+    requiredRole: "SALES_MANAGER",
+    title: `Estimated delivery ${arrival} is after the customer's date of ${wanted}`,
+    reason: `No combination of stock and service level puts this on site by ${wanted}. The earliest realistic arrival is ${arrival}.`,
+    proposedAction: `Offer ${arrival} and confirm the customer can accept it.`,
+    commercialImpact: `Quote value ${formatCurrency(input.quoteTotalCents)}. A missed date on a shutdown or outage is usually a lost order rather than a late one.`,
+    technicalImpact: "None — this is an availability constraint.",
+    riskNote:
+      "Sending a quotation that silently misses a stated deadline is how a customer finds out on the day. Agree the date before the quote goes out.",
+    context: {
+      estimatedArrival: input.estimatedArrival?.toISOString() ?? null,
+      requiredBy: input.requiredBy?.toISOString() ?? null,
+      shortfall: input.plan?.shortfall ?? 0,
+    },
   };
 }
 
@@ -250,6 +310,7 @@ export function evaluateApprovals(input: ApprovalEvaluationInput): ApprovalRequi
     substitutionRequirement,
     warningRequirement,
     uncertaintyRequirement,
+    deadlineRequirement,
     marginRequirement,
     discountRequirement,
     largeValueRequirement,
@@ -288,6 +349,7 @@ export function deriveRisk(
     "MARGIN_FLOOR",
     "COMPATIBILITY_WARNING",
     "TECHNICAL_UNCERTAINTY",
+    "DELIVERY_DATE_MISS",
   ];
   if (requirements.some((r) => highKinds.includes(r.kind))) return "HIGH";
   return "MEDIUM";

@@ -20,7 +20,10 @@ export default async function QuotePage({ params }: { params: Promise<{ quoteNum
   if (!quote) notFound();
 
   const released = quote.status === "APPROVED" || quote.status === "SENT";
-  const blocking = quote.approvals.filter((a) => a.status === "PENDING" || a.status === "CHANGES_REQUESTED");
+  const blocking = quote.approvals.filter(
+    (a) => a.status === "PENDING" || a.status === "CHANGES_REQUESTED",
+  );
+  const rejectedApproval = quote.approvals.find((a) => a.status === "REJECTED") ?? null;
 
   return (
     <div className="mx-auto w-full max-w-4xl px-5 py-5">
@@ -39,14 +42,52 @@ export default async function QuotePage({ params }: { params: Promise<{ quoteNum
       {!released ? (
         <div className="no-print mb-4 rounded-md border border-warn-200 bg-warn-50 px-4 py-2.5">
           <p className="text-[12.5px] text-warn-700">
-            {blocking.length > 0
-              ? `Draft only — ${blocking.length} approval${blocking.length === 1 ? "" : "s"} outstanding. This document is not releasable to the customer yet.`
-              : "Draft — not yet released."}
+            {rejectedApproval
+              ? "An approval on this quotation was refused. It cannot be sent."
+              : blocking.length > 0
+                ? `Draft only — ${blocking.length} approval${blocking.length === 1 ? "" : "s"} outstanding. The printed copy carries a draft mark until they are cleared.`
+                : "Draft — not yet released. The printed copy carries a draft mark."}
           </p>
         </div>
       ) : null}
 
-      <article className="print-full rounded-md border border-[var(--hairline)] bg-white px-8 py-8 shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
+      <article className="print-full relative overflow-hidden rounded-md border border-[var(--hairline)] bg-white px-8 py-8 shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
+        {!released ? (
+          <>
+            {/*
+              This banner and watermark are deliberately NOT .no-print. A
+              printed quotation is a document that leaves the building; if it
+              could be saved as a clean PDF while approvals were outstanding,
+              the whole approval gate would be one keystroke wide.
+            */}
+            <div className="mb-5 border-2 border-fail-600 px-4 py-2.5">
+              <p className="text-[12px] font-semibold tracking-wide text-fail-700 uppercase">
+                {rejectedApproval
+                  ? "Not valid — approval refused"
+                  : blocking.length > 0
+                    ? "Draft — not approved for release"
+                    : "Draft — not released"}
+              </p>
+              <p className="mt-0.5 text-[11.5px] leading-relaxed text-fail-700">
+                {rejectedApproval
+                  ? `An approval on this quotation was refused (${rejectedApproval.title}). It must not be sent to the customer.`
+                  : blocking.length > 0
+                    ? `${blocking.length} internal approval${blocking.length === 1 ? "" : "s"} outstanding: ${blocking
+                        .map((a) => a.title)
+                        .join("; ")}. Prices and dates below are provisional and this document must not be sent to the customer.`
+                    : "This quotation has not been released. Prices and dates below are provisional."}
+              </p>
+            </div>
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 flex items-center justify-center"
+            >
+              <span className="rotate-[-24deg] text-[86px] font-bold tracking-[0.1em] text-fail-600/[0.07] select-none">
+                {rejectedApproval ? "REFUSED" : "DRAFT"}
+              </span>
+            </div>
+          </>
+        ) : null}
         <header className="flex items-start justify-between gap-8 border-b border-ink-900 pb-4">
           <div>
             <div className="flex items-center gap-2">

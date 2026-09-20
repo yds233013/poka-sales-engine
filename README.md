@@ -113,8 +113,10 @@ against written policy and returns the set of approvals it needs:
 | Substitution with an open warning or unverified dimension | any | Application engineer |
 | A requirement that could not be resolved from the request | any | Application engineer |
 | Quote value above review threshold | > $50,000 | Sales manager |
+| Estimated delivery after the customer's date | any | Sales manager |
 | Expedited freight to hit a date | any | Sales manager |
-| Order split across warehouses | any | Sales manager |
+| A rep-entered manual discount | applied, then re-evaluated | whatever the new numbers require |
+| Order arriving as more than one delivery | any | Sales manager |
 
 Three things make this a real gate rather than a label:
 
@@ -190,9 +192,11 @@ so the approval engine sees it. Every price considered is recorded for audit.
 misses the customer's date, service is upgraded a step at a time and the quote reports
 `expedited: true` so policy can gate the extra cost.
 
-**Margin.** Freight is treated as a cost of sale rather than a marked-up revenue line. That is a
-deliberate choice: it means a long-haul split genuinely erodes deal margin, which is the behaviour
-the approval engine needs to see.
+**Margin.** Freight is billed to the customer at cost, so it contributes revenue and cost in equal
+measure and nets to zero: gross margin is goods revenue minus goods cost, reported as a share of
+everything invoiced. An earlier version subtracted the freight cost while ignoring the freight
+revenue, which understated every deal by the whole freight charge — several points on a long-haul
+split, easily enough to manufacture a policy breach that did not exist.
 
 `assertTotalsConsistent()` re-derives the arithmetic before any quote is persisted. A quote whose
 lines do not add up to its own total is worse than no quote at all.
@@ -323,9 +327,13 @@ Stated plainly, because a demonstration that oversells itself is worse than one 
   that is the right trade; at ten thousand documents it would not be.
 - **Inventory is read-only.** Quoting does not reserve stock, so two quotes can promise the same
   units. Real ATP needs soft allocation with expiry.
+- **One line item per case.** A request naming two different part numbers stops and asks for them
+  to be sent separately rather than guessing which line the quantity belonged to.
 - **Single currency, single tax jurisdiction.** No FX, no VAT/sales tax, no Incoterms handling.
 - **Freight rates are a synthetic zone matrix**, not a carrier integration.
 - **No email integration**, by design — the customer response is drafted and copied by a person.
+- **No authentication**, so the approval role gate is enforced against a user the client names.
+  The gate itself is server-side and genuinely refuses; what is missing is proof of who is asking.
 - **One quote revision per case.** Re-running replaces the analysis rather than versioning it;
   a production system would keep the history.
 - **The agent pipeline is fixed, not adaptive.** That is a deliberate trade — a deterministic

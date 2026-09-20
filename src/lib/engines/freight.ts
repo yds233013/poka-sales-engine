@@ -115,6 +115,8 @@ export function quoteFreight(inputs: FreightInputs): FreightQuote {
       service: "GROUND",
       maxTransitDays: 0,
       expedited: false,
+      missesDeadline: false,
+      estimatedArrival: null,
       notes: ["No allocations to ship."],
     };
   }
@@ -150,25 +152,38 @@ export function quoteFreight(inputs: FreightInputs): FreightQuote {
     );
   }
 
+  let missesDeadline = false;
+
   if (deadline && result.arrival.getTime() > deadline.getTime()) {
+    // Only upgrade if the faster service actually makes the date. Escalating
+    // to air on a shipment that is still late buys nothing and bills the
+    // customer for it — and it would hand the approval engine a justification
+    // ("expedited freight required to hit the date") that is simply untrue.
+    let upgraded: { legs: FreightLeg[]; arrival: Date } | null = null;
     for (const service of SERVICE_ORDER.slice(1)) {
       const faster = attempt(service);
       if (!faster) continue;
-      chosenService = service;
-      result = faster;
-      expedited = true;
-      if (faster.arrival.getTime() <= deadline.getTime()) break;
+      if (faster.arrival.getTime() <= deadline.getTime()) {
+        chosenService = service;
+        upgraded = faster;
+        break;
+      }
     }
-    if (expedited) {
+
+    if (upgraded) {
+      result = upgraded;
+      expedited = true;
       notes.push(
         `Ground service would arrive after the requested date, so the quote is rated at ${chosenService.toLowerCase()} service.`,
       );
-    }
-    if (result.arrival.getTime() > deadline.getTime()) {
+    } else {
+      missesDeadline = true;
       notes.push(
-        `Even at ${chosenService.toLowerCase()} service the estimated arrival ${result.arrival
+        `No service level reaches the site by the requested date. The quote stays on ground at ${startOfDay(
+          result.arrival,
+        )
           .toISOString()
-          .slice(0, 10)} is after the requested date.`,
+          .slice(0, 10)} rather than charging for a faster service that would still be late.`,
       );
     }
   }
@@ -189,6 +204,8 @@ export function quoteFreight(inputs: FreightInputs): FreightQuote {
     service: chosenService,
     maxTransitDays: Math.max(...result.legs.map((l) => l.transitDays)),
     expedited,
+    missesDeadline,
+    estimatedArrival: result.arrival,
     notes,
   };
 }

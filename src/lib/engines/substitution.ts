@@ -40,6 +40,13 @@ export type CandidateVerdict = "RECOMMENDED" | "VIABLE" | "REJECTED" | "REQUIRES
 
 export interface RankedCandidate extends RankableCandidate {
   verdictLabel: CandidateVerdict;
+  /**
+   * True when the promoted candidate still carries warnings or unverified
+   * dimensions. Promotion overwrites the label with RECOMMENDED, and without
+   * this the UI would show a selection with open technical points as though
+   * it were clean.
+   */
+  hasOpenPoints: boolean;
   rank: number;
   score: number;
   reason: string;
@@ -195,11 +202,16 @@ export function rankCandidates(candidates: RankableCandidate[]): RankedCandidate
   // cover the quantity at all is never promoted.
   const winner =
     scored.find((s) => deliverabilityBand(s) === 0) ?? scored.find((s) => deliverabilityBand(s) === 1);
+  const winnerNeededReview = winner?.label === "REQUIRES_REVIEW";
   if (winner) winner.label = "RECOMMENDED";
 
   return scored.map((s, index) => ({
     ...s.candidate,
     verdictLabel: s.label,
+    hasOpenPoints:
+      s === winner
+        ? winnerNeededReview
+        : s.label === "REQUIRES_REVIEW",
     rank: index + 1,
     score: s.score,
     reason: describe(s.candidate, s.label === "RECOMMENDED" ? "VIABLE" : s.label),

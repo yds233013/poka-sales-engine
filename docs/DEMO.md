@@ -122,6 +122,22 @@ Scroll to the drafted response.
 > their dates, quote number and validity. No margin, no cost, no mention of the approvals. Editable,
 > and one click to copy."
 
+### 3:10 — Optional: discount into a wall (30 seconds)
+
+If you have a sceptic in the room, this is the one to show them. Under Commercials, put **34** in
+the **Reprice** box and hit Apply.
+
+> "I'm a rep and I want this deal. Thirty-four points off.
+>
+> The case re-runs — and the discount lands. Nothing stops me applying it. But look what happened
+> underneath: margin went to 7.5%, which is under the hard floor, so the margin approval is no
+> longer the sales manager's to give. It escalated to the commercial director. Approvals went from
+> three to five.
+>
+> You can discount yourself *into* an approval. You can't discount your way past one."
+
+Re-seed afterwards (`npm run db:seed`) to put the case back.
+
 ---
 
 ## Detour A — the refusal (30 seconds)

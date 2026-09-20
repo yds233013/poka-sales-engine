@@ -16,6 +16,7 @@ import {
   completeCase,
   decideApproval,
   releaseQuote,
+  repriceQuote,
   saveCustomerResponse,
   WorkflowError,
 } from "@/lib/workflow";
@@ -102,6 +103,7 @@ const responseSchema = z.object({
   subject: z.string().min(1).max(300),
   body: z.string().min(1).max(20000),
   actor: z.string().min(1),
+  userId: z.string().min(1).optional(),
 });
 
 export async function saveResponseAction(input: {
@@ -109,12 +111,43 @@ export async function saveResponseAction(input: {
   subject: string;
   body: string;
   actor: string;
+  userId?: string;
 }): Promise<ActionResult> {
   try {
     const parsed = responseSchema.parse(input);
     await saveCustomerResponse(prisma, parsed.requestId, parsed);
     revalidateCase(parsed.requestId);
     return { ok: true, message: "Response saved." };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+const repriceSchema = z.object({
+  requestId: z.string().min(1),
+  discountPct: z.number().min(0).max(95),
+  userId: z.string().min(1),
+});
+
+export async function repriceQuoteAction(input: {
+  requestId: string;
+  discountPct: number;
+  userId: string;
+}): Promise<ActionResult> {
+  try {
+    const parsed = repriceSchema.parse(input);
+    const user = await prisma.user.findUnique({ where: { id: parsed.userId } });
+    if (!user) return { ok: false, message: "Unknown user." };
+    await repriceQuote(prisma, parsed.requestId, {
+      discountPct: parsed.discountPct,
+      actor: user.name,
+      actorId: user.id,
+    });
+    revalidateCase(parsed.requestId);
+    return {
+      ok: true,
+      message: `Repriced at ${parsed.discountPct}% off list. Approvals re-evaluated.`,
+    };
   } catch (error) {
     return fail(error);
   }

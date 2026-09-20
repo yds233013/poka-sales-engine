@@ -158,6 +158,7 @@ export async function getPolicyThresholds() {
     minMarginPct: byCode.get("MIN_MARGIN_PCT") ?? 22,
     hardMarginFloorPct: byCode.get("HARD_MARGIN_FLOOR_PCT") ?? 8,
     largeQuoteValue: byCode.get("LARGE_QUOTE_VALUE") ?? 50000,
+    maxFactoryUnits: byCode.get("MAX_FACTORY_UNITS") ?? 250,
   };
 }
 

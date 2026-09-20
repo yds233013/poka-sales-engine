@@ -4,6 +4,7 @@ import { runSalesRequest } from "@/lib/agent/orchestrator";
 import {
   decideApproval,
   releaseQuote,
+  repriceQuote,
   saveCustomerResponse,
   completeCase,
   WorkflowError,
@@ -311,6 +312,46 @@ describe("approval bypass attempts", () => {
     });
     expect(latest.subject).toBe("Edited by a person");
     expect(latest.edited).toBe(true);
+  });
+
+  it("a rep can discount into an approval, never past one", async () => {
+    const { request } = await analyse(
+      "Please quote 5 x MX-160 for the Charlotte plant, 90 C duty, DN50, 460 V 3 phase.",
+      "Discount escalation",
+    );
+    expect(request.approvals).toHaveLength(0);
+
+    await repriceQuote(db, request.id, { discountPct: 45, actor: "Tester" });
+
+    const after = await db.salesRequest.findUniqueOrThrow({
+      where: { id: request.id },
+      include: { approvals: true, quotes: true },
+    });
+
+    // The discount is applied — and it drags the deal under the hard floor,
+    // which escalates past the sales manager to the commercial director.
+    const margin = Number(after.quotes[0].marginPct);
+    expect(margin).toBeLessThan(8);
+    const marginApproval = after.approvals.find((a) => a.kind === "MARGIN_FLOOR")!;
+    expect(marginApproval.requiredRole).toBe("ADMIN");
+    expect(after.approvals.some((a) => a.kind === "DISCOUNT_THRESHOLD")).toBe(true);
+
+    // And the quote is back to pending, not still released from before.
+    expect(after.quotes[0].status).toBe("PENDING_APPROVAL");
+    await expect(releaseQuote(db, request.id, { actor: "Tester" })).rejects.toThrow(WorkflowError);
+  });
+
+  it("refuses a discount outside the permitted range", async () => {
+    const { request } = await analyse(
+      "Please quote 5 x MX-160 for the Charlotte plant, 90 C duty, DN50, 460 V 3 phase.",
+      "Discount bounds",
+    );
+    await expect(
+      repriceQuote(db, request.id, { discountPct: 99, actor: "Tester" }),
+    ).rejects.toThrow(/between 0% and 95%/);
+    await expect(
+      repriceQuote(db, request.id, { discountPct: -5, actor: "Tester" }),
+    ).rejects.toThrow(/between 0% and 95%/);
   });
 
   it("clearing every approval does allow release, and drafts the response then", async () => {

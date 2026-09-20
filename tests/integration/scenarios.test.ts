@@ -154,10 +154,12 @@ describe("seeded demo scenarios", () => {
     expect(request.approvals.map((a) => a.requiredRole)).toContain("APPLICATION_ENGINEER");
   });
 
-  it("REQ-2019 — a completed case carries a released quote and a full audit trail", async () => {
+  it("REQ-2019 — a completed case carries a sent quote and a full audit trail", async () => {
     const request = await load("REQ-2019");
     expect(request.status).toBe("COMPLETED");
-    expect(request.quotes[0].status).toBe("APPROVED");
+    // Closing the case means the quotation went out — "released but never
+    // sent" and "sent to the customer" have to be distinguishable.
+    expect(request.quotes[0].status).toBe("SENT");
     const events = await db.auditEvent.findMany({ where: { requestId: request.id } });
     expect(events.map((e) => e.type)).toEqual(
       expect.arrayContaining([
