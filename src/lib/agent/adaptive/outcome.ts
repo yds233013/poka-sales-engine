@@ -43,8 +43,14 @@ export interface GroundingIssue {
 const MONEY = /\$[\d,]+(?:\.\d{2})?/g;
 /** Bare quantity claims like "12 units", "8 in stock", "15 available". */
 const STOCK_CLAIM = /\b(\d{1,5})\s+(?:units?|pumps?|pieces?)\s+(?:are\s+)?(?:in stock|available|on hand)\b/gi;
-/** Document citations, e.g. `DS-1020 §2.1`. */
-const CITATION = /\b([A-Z]{2}-\d{4})\s*§\s*([\d.]+)/g;
+/**
+ * Document citations, e.g. `DS-1020 §2.1`.
+ *
+ * The anchor pattern is written so it cannot swallow a sentence-ending period:
+ * `[\d.]+` would turn "…per DS-1020 §2.1." into the anchor "2.1.", and a
+ * perfectly good citation would then be reported as fabricated.
+ */
+const CITATION = /\b([A-Z]{2}-\d{4})\s*§\s*(\d+(?:\.\d+)*)/g;
 
 /**
  * Check a proposed outcome against what was actually established.

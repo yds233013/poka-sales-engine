@@ -88,6 +88,8 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
       summary: call.summary,
       status: call.status,
       safety: call.safety,
+      effect: call.effect,
+      modelInitiated: call.modelInitiated,
       durationMs: call.durationMs,
       input: call.input,
       output: call.output,
@@ -303,7 +305,26 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
 
             {traceSteps.length > 0 ? (
               <div id="trace" className="scroll-mt-16">
-                <TracePanel steps={traceSteps} provider={run?.provider ?? "mock"} durationMs={run?.durationMs ?? null} />
+                <TracePanel
+                  steps={traceSteps}
+                  provider={run?.provider ?? "mock"}
+                  durationMs={run?.durationMs ?? null}
+                  run={
+                    run
+                      ? {
+                          mode: run.mode,
+                          model: run.model,
+                          termination: run.termination,
+                          turnCount: run.turnCount,
+                          inputTokens: run.inputTokens,
+                          outputTokens: run.outputTokens,
+                          estimatedCostUsd: run.estimatedCostUsd ? Number(run.estimatedCostUsd) : null,
+                          guardrailEvents: (run.guardrailEvents as { kind: string; detail: string }[] | null) ?? [],
+                          groundingIssues: [],
+                        }
+                      : null
+                  }
+                />
               </div>
             ) : null}
 

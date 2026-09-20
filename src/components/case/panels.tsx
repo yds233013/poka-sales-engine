@@ -8,6 +8,7 @@ import {
   statusLabel,
   Mono,
   CHECK_TONE,
+  type Tone,
 } from "@/components/ui/primitives";
 import { EvidenceList, type EvidenceView } from "@/components/evidence";
 import { CheckMatrix, type CheckView } from "./check-matrix";
@@ -609,11 +610,32 @@ export interface TraceStep {
   summary: string;
   status: string;
   safety: string;
+  effect: string;
+  modelInitiated: boolean;
   durationMs: number;
   evidence: EvidenceView[];
   input: unknown;
   output: unknown;
 }
+
+export interface RunMeta {
+  mode: "DETERMINISTIC" | "ADAPTIVE_AGENT";
+  model: string | null;
+  termination: string | null;
+  turnCount: number | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  estimatedCostUsd: number | null;
+  guardrailEvents: { kind: string; detail: string }[];
+  groundingIssues: string[];
+}
+
+const EFFECT_TONE: Record<string, Tone> = {
+  READ_ONLY: "neutral",
+  DETERMINISTIC_COMPUTATION: "accent",
+  MUTATION: "warn",
+  HUMAN_GATED_MUTATION: "fail",
+};
 
 const SAFETY_TONE: Record<string, "pass" | "warn" | "fail"> = {
   AUTO_SAFE: "pass",
@@ -621,13 +643,91 @@ const SAFETY_TONE: Record<string, "pass" | "warn" | "fail"> = {
   BLOCKED: "fail",
 };
 
-export function TracePanel({ steps, provider, durationMs }: { steps: TraceStep[]; provider: string; durationMs: number | null }) {
+export function TracePanel({
+  steps,
+  provider,
+  durationMs,
+  run,
+}: {
+  steps: TraceStep[];
+  provider: string;
+  durationMs: number | null;
+  run?: RunMeta | null;
+}) {
+  const adaptive = run?.mode === "ADAPTIVE_AGENT";
+  const agentCalls = steps.filter((s) => s.modelInitiated).length;
+
   return (
     <Panel>
       <PanelHeader
         title="What the engine did"
-        subtitle={`${steps.length} tool calls in ${duration(durationMs)} · ${provider === "mock" ? "deterministic provider" : provider}. This is the executed trace, not a narration of it.`}
+        subtitle={
+          adaptive
+            ? `${agentCalls} of ${steps.length} tool calls were chosen by the model; the rest are deterministic finalization. ${duration(durationMs)}${run?.turnCount ? ` · ${run.turnCount} turns` : ""}. This is the executed trace, not a narration of it.`
+            : `${steps.length} tool calls in ${duration(durationMs)} · ${provider === "mock" ? "deterministic provider" : provider}. This is the executed trace, not a narration of it.`
+        }
+        actions={
+          run ? (
+            <Pill tone={adaptive ? "accent" : "neutral"}>
+              {adaptive ? `Adaptive · ${run.model ?? "model"}` : "Deterministic"}
+            </Pill>
+          ) : null
+        }
       />
+
+      {run && adaptive ? (
+        <div className="grid grid-cols-2 gap-px border-b border-[var(--hairline)] bg-[var(--hairline)] sm:grid-cols-4">
+          {[
+            { label: "Termination", value: run.termination ? statusLabel(run.termination) : "—" },
+            { label: "Agent tool calls", value: String(agentCalls) },
+            {
+              label: "Tokens",
+              value:
+                run.inputTokens != null
+                  ? `${run.inputTokens.toLocaleString()} / ${(run.outputTokens ?? 0).toLocaleString()}`
+                  : "—",
+            },
+            {
+              label: "Estimated cost",
+              value: run.estimatedCostUsd != null ? `$${run.estimatedCostUsd.toFixed(4)}` : "—",
+            },
+          ].map((cell) => (
+            <div key={cell.label} className="bg-white px-3 py-2">
+              <div className="label-xs">{cell.label}</div>
+              <div className="tnum mt-0.5 text-[12.5px] font-medium text-ink-900">{cell.value}</div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {run && run.guardrailEvents.length > 0 ? (
+        <div className="border-b border-[var(--hairline)] bg-warn-50 px-4 py-2.5">
+          <SectionLabel className="!text-warn-700">Guardrails triggered</SectionLabel>
+          <ul className="mt-1 space-y-0.5">
+            {run.guardrailEvents.map((event, index) => (
+              <li key={index} className="text-[11.5px] leading-relaxed text-warn-700">
+                <span className="font-medium">{event.kind.replace(/_/g, " ").toLowerCase()}</span> — {event.detail}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {run && run.groundingIssues.length > 0 ? (
+        <div className="border-b border-[var(--hairline)] bg-fail-50 px-4 py-2.5">
+          <SectionLabel className="!text-fail-700">Unsupported claims rejected</SectionLabel>
+          <ul className="mt-1 space-y-0.5">
+            {run.groundingIssues.map((issue, index) => (
+              <li key={index} className="text-[11.5px] leading-relaxed text-fail-700">
+                {issue}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-[11px] text-fail-700">
+            The case was routed for human review rather than having the summary quietly rewritten.
+          </p>
+        </div>
+      ) : null}
       <ol className="divide-y divide-[var(--hairline)]">
         {steps.map((step) => (
           <li key={step.id} className="px-4 py-2.5">
@@ -636,6 +736,14 @@ export function TracePanel({ steps, provider, durationMs }: { steps: TraceStep[]
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <Mono className="!text-[11.5px] text-accent-700">{step.toolName}</Mono>
+                  {step.modelInitiated ? (
+                    <Pill tone="accent" className="!px-1 !py-0 !text-[10px]">
+                      agent chose
+                    </Pill>
+                  ) : null}
+                  <Pill tone={EFFECT_TONE[step.effect] ?? "neutral"} className="!px-1 !py-0 !text-[10px]">
+                    {step.effect.replace(/_/g, " ").toLowerCase()}
+                  </Pill>
                   <Pill tone={SAFETY_TONE[step.safety] ?? "neutral"} className="!px-1 !py-0 !text-[10px]">
                     {step.safety.replace("_", " ").toLowerCase()}
                   </Pill>

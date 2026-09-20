@@ -445,6 +445,13 @@ async function concludeRun(args: ConcludeArgs): Promise<AdaptiveOutcome> {
     : null;
   const winner = recommendation?.candidates.find((c) => c.verdict === "RECOMMENDED") ?? null;
 
+  // Two different texts are in play here and they are not graded the same way.
+  //
+  // The model's own rationale is a claim and gets grounding-checked. The
+  // recommendation rationale that `finalizeCase` produced is authoritative by
+  // construction — it is assembled from engine output — so checking it against
+  // the agent's investigation state would flag correct figures the agent never
+  // had to look up itself.
   const outcome = buildOutcome(result, requestId, "READY_FOR_APPROVAL", {
     summary: recommendation?.rationale ?? payload.rationale,
     missingInformation: [],
@@ -456,7 +463,11 @@ async function concludeRun(args: ConcludeArgs): Promise<AdaptiveOutcome> {
         .map((c) => ({ sku: c.product.sku, verdict: c.verdict, reason: c.reason.slice(0, 400) })) ?? [],
   });
 
-  const issues = validate(outcome, result, args.knownSkus);
+  const issues = validate(
+    { ...outcome, recommendationSummary: payload.rationale },
+    result,
+    args.knownSkus,
+  );
   await persistMeta(issues.length > 0 ? "NEEDS_INTERNAL_REVIEW" : "READY_FOR_APPROVAL", issues, outcome);
 
   // An ungrounded summary does not get quietly rewritten — the case is routed

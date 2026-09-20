@@ -12,6 +12,7 @@ const NAV = [
   { href: "/catalog", label: "Catalog", match: (p: string) => p.startsWith("/catalog") },
   { href: "/library", label: "Technical library", match: (p: string) => p.startsWith("/library") },
   { href: "/customers", label: "Accounts", match: (p: string) => p.startsWith("/customers") },
+  { href: "/agent-lab", label: "Agent lab", match: (p: string) => p.startsWith("/agent-lab") },
 ];
 
 export function AppShell({
