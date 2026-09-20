@@ -37,6 +37,9 @@ these, that is the thing to discuss before writing it.
 - Chain-of-thought is never persisted or displayed. Tool summaries are written
   in operations language for a salesperson.
 - One `ToolBus` per run, so sequence numbers form a single ordered series.
+- **`modelInitiated` means the agent named that tool.** Tools built on other
+  tools record both, but only the outer call is the agent's. An "agent chose"
+  mark that covers calls the agent never made is worse than no mark.
 
 ## Untrusted content
 
@@ -54,3 +57,7 @@ these, that is the thing to discuss before writing it.
   pass, never the deterministic numbers relabelled.
 - Do not delete a test to make a change pass. Replace it with a stronger one or
   fix the code.
+- **Never run a seeded case in a test or an eval.** Analysing a case rewrites
+  its recommendation, quote and approvals, so REQ-2041 would carry whatever the
+  last test left behind — and Vitest orders files by duration, not by name.
+  Clone it (`CaseTracker.clone`, `prepareScenarioCase`) and delete the copy.

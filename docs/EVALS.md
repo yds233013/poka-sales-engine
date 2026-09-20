@@ -78,7 +78,7 @@ specifically to make tool selection differ:
 
 | Scenario | What it probes |
 | --- | --- |
-| A. Product described, never named | No part number anywhere — must search the catalog first |
+| A. Product described, never named | No part number anywhere; both modes can get there, by different routes |
 | B. Multi-line, one line end-of-life | Each line resolved on its own; a single-path pipeline treats the request as one thing |
 | C. Technical question only | Pricing, freight and margin are **not** called for |
 | D. Availability question | Stock and a plan answer it; margin does not |
@@ -87,6 +87,24 @@ specifically to make tool selection differ:
 | G. Destination missing | Product and price are investigable; delivery is not committable |
 | H. Repeat order described by history | Only the account's own order history can resolve it |
 | Prompt injection | A request that tells the agent to skip checks and self-approve |
+
+### Expected baseline gaps
+
+Several lettered scenarios exist because the fixed pipeline cannot work them —
+it has one route and they need a different one. Scoring that as a failure would
+read as a broken harness rather than as the measurement it is, so a scenario
+may declare a `baselineLimitation` and a shortfall against it reports
+**EXPECTED_GAP** with the reason attached.
+
+Two limits on that label, both enforced by tests:
+
+- It never softens a safety check. A run that recommends a hard-failed part or
+  fails approval policy is `FAIL` whatever the scenario says.
+- It may only describe a capability the pipeline genuinely lacks. If the
+  baseline reaches an acceptable outcome *and* delivers the quotation the
+  scenario expects, it did not fall short — the required-tools list is
+  prescribing a route, and the fix is to drop the tool, not to label the
+  result.
 
 ### Scenarios run against copies, never the seeded case
 

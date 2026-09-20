@@ -37,6 +37,16 @@ describe("scenario suite", () => {
     for (const scenario of declared) {
       const result = await runScenario(db, scenario, "DETERMINISTIC");
       expect(result.status, `${scenario.id} is declared a baseline gap`).toBe("EXPECTED_GAP");
+
+      // And the shortfall has to be substantive. A baseline that reaches an
+      // acceptable outcome *and* produces the expected quotation did the job;
+      // labelling that a gap would be using the required-tools list to
+      // prescribe a route rather than to demand evidence.
+      const delivered =
+        result.outcome !== null &&
+        (scenario.expected.outcomes as string[]).includes(result.outcome) &&
+        scenario.expected.quote === true;
+      expect(delivered, `${scenario.id} declares a limitation but the baseline delivered the quote`).toBe(false);
     }
   }, 120_000);
 
