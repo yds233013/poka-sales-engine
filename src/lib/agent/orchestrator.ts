@@ -49,6 +49,7 @@ import {
   screenCandidates,
   searchTechnicalDocs,
   type SubstituteCandidate,
+  type ResolvedCustomer,
 } from "./tools";
 import { toProductView } from "./mappers";
 import { recordAudit } from "@/lib/audit";
@@ -208,6 +209,101 @@ export async function runSalesRequest(
     // ── 6. Build the candidate set ─────────────────────────────────────────
     const candidateSources = await buildCandidates(bus, prisma, incumbent, requirements);
 
+    // ── 7+. Hand over to the shared deterministic finalizer ────────────────
+    return await finalizeCase(prisma, bus, provider, {
+      runId: run.id,
+      requestId,
+      subject: request.subject,
+      ownerId: request.ownerId,
+      account,
+      incumbent,
+      requirements,
+      quantity: quantity!,
+      requiredBy,
+      destinationZone,
+      candidateSources,
+      openQuestions: analysis.openQuestions,
+      manualDiscountPct: options.manualDiscountPct ?? null,
+      asOf,
+    }, startedAt);
+
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await prisma.agentRun.update({
+      where: { id: run.id },
+      data: {
+        status: "FAILED",
+        error: message,
+        finishedAt: new Date(),
+        durationMs: Date.now() - startedAt,
+        trace: bus.calls as object[],
+      },
+    });
+    // NEEDS_REVIEW, not BLOCKED. BLOCKED means "the engine refused to
+    // recommend anything because nothing is safe"; a crash is a different
+    // thing and must not masquerade as a safety verdict.
+    await prisma.salesRequest.update({
+      where: { id: requestId },
+      data: {
+        status: "NEEDS_REVIEW",
+        risk: "HIGH",
+        blockedReason: `Analysis did not complete: ${message.split("\n")[0]}. Re-run it, or work the case by hand.`,
+      },
+    });
+    await recordAudit(prisma, requestId, {
+      type: "RUN_FAILED",
+      actor: "Poka Sales Engine",
+      summary: `Analysis stopped: ${message.split("\n")[0]}`,
+    });
+    throw error;
+  }
+}
+
+
+// ─────────────────────── shared deterministic finalization ─────────────────
+
+export interface FinalizeInput {
+  runId: string;
+  requestId: string;
+  subject: string;
+  ownerId: string | null;
+  account: ResolvedCustomer;
+  incumbent: ProductView | null;
+  requirements: RequirementView[];
+  quantity: number;
+  requiredBy: Date | null;
+  destinationZone: string;
+  /** The products to evaluate. Every one is re-validated from scratch. */
+  candidateSources: SubstituteCandidate[];
+  openQuestions: string[];
+  manualDiscountPct?: number | null;
+  asOf: Date;
+}
+
+/**
+ * Turn a set of candidate products into a recommendation, a quote and the
+ * approvals policy requires.
+ *
+ * This is the single path to business truth, and both execution modes run it.
+ * The deterministic pipeline supplies candidates from curated links plus a
+ * catalog screen; the adaptive agent supplies whatever it decided to
+ * investigate. Either way every candidate is re-evaluated here against the
+ * compatibility rules, re-priced by the pricing engine, and re-tested against
+ * approval policy.
+ *
+ * That is the whole reason the extraction exists: an agent can influence which
+ * products get looked at, and nothing else. It cannot reach the numbers.
+ */
+export async function finalizeCase(
+  prisma: PrismaClient,
+  bus: ToolBus,
+  provider: ReturnType<typeof getAIProvider>,
+  input: FinalizeInput,
+  startedAt: number,
+): Promise<RunOutcome> {
+  const { runId, requestId, account, incumbent, requirements, requiredBy, destinationZone, asOf } = input;
+  const quantity = input.quantity;
+  const candidateSources = input.candidateSources;
     // ── 7. Evaluate every candidate ────────────────────────────────────────
     const evaluated: {
       source: SubstituteCandidate;
@@ -239,7 +335,7 @@ export async function runSalesRequest(
         sku: source.product.sku,
         quantity: quantity!,
         customerId: account.customerId,
-        manualDiscountPct: options.manualDiscountPct ?? null,
+        manualDiscountPct: input.manualDiscountPct ?? null,
       });
       evaluated.push({ source, verdict, plan: inventory.plan, price });
     }
@@ -266,7 +362,7 @@ export async function runSalesRequest(
 
     if (!winner) {
       return await finishAsNoViableOption(
-        prisma, bus, run.id, requestId, provider, incumbent, ranked, request.subject, account, startedAt,
+        prisma, bus, runId, requestId, provider, incumbent, ranked, input.subject, account, startedAt,
       );
     }
 
@@ -373,7 +469,7 @@ export async function runSalesRequest(
         .filter((r) => r.verdictLabel === "REJECTED")
         .map((r) => ({ sku: r.sku, reason: r.reason })),
       warnings: [...winner.verdict.warnings, ...winner.verdict.unknowns].map((c) => c.detail),
-      openQuestions: analysis.openQuestions,
+      openQuestions: input.openQuestions,
     });
 
     const risk = deriveRisk(approvals, winner.verdict);
@@ -414,7 +510,7 @@ export async function runSalesRequest(
       },
     });
 
-    await linkEvidenceToRecommendation(prisma, run.id, recommendation.id);
+    await linkEvidenceToRecommendation(prisma, runId, recommendation.id);
 
     const quote = await createQuote(prisma, {
       requestId,
@@ -444,7 +540,7 @@ export async function runSalesRequest(
           technicalImpact: requirement.technicalImpact,
           riskNote: requirement.riskNote,
           context: requirement.context as object,
-          requestedById: request.ownerId,
+          requestedById: input.ownerId,
         },
       });
       await recordAudit(prisma, requestId, {
@@ -481,46 +577,16 @@ export async function runSalesRequest(
       });
     }
 
-    await finishRun(prisma, run.id, bus, startedAt, "COMPLETED");
+    await finishRun(prisma, runId, bus, startedAt, "COMPLETED");
     const status = autoRelease ? "RESPONSE_READY" : "READY_FOR_APPROVAL";
 
     return {
-      runId: run.id,
+      runId,
       status,
       recommendationId: recommendation.id,
       quoteId: quote.id,
       approvalCount: approvals.length,
     };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    await prisma.agentRun.update({
-      where: { id: run.id },
-      data: {
-        status: "FAILED",
-        error: message,
-        finishedAt: new Date(),
-        durationMs: Date.now() - startedAt,
-        trace: bus.calls as object[],
-      },
-    });
-    // NEEDS_REVIEW, not BLOCKED. BLOCKED means "the engine refused to
-    // recommend anything because nothing is safe"; a crash is a different
-    // thing and must not masquerade as a safety verdict.
-    await prisma.salesRequest.update({
-      where: { id: requestId },
-      data: {
-        status: "NEEDS_REVIEW",
-        risk: "HIGH",
-        blockedReason: `Analysis did not complete: ${message.split("\n")[0]}. Re-run it, or work the case by hand.`,
-      },
-    });
-    await recordAudit(prisma, requestId, {
-      type: "RUN_FAILED",
-      actor: "Poka Sales Engine",
-      summary: `Analysis stopped: ${message.split("\n")[0]}`,
-    });
-    throw error;
-  }
 }
 
 // ───────────────────────────── helpers ─────────────────────────────────────
@@ -539,7 +605,7 @@ function emptyPlan(requestedQty: number): FulfillmentPlan {
   };
 }
 
-function gapsThatBlock(
+export function gapsThatBlock(
   requirements: RequirementView[],
   incumbent: ProductView | null,
   quantity: number | null,
@@ -577,7 +643,7 @@ function gapsThatBlock(
  * whole relevant catalog. The screen is what stops the candidate set being
  * an accident of alphabetical order.
  */
-async function buildCandidates(
+export async function buildCandidates(
   bus: ToolBus,
   prisma: PrismaClient,
   incumbent: ProductView | null,
@@ -633,7 +699,7 @@ function relatedCategories(code: string): string[] {
   return map[code] ?? [];
 }
 
-function inferCategories(requirements: RequirementView[]): string[] {
+export function inferCategories(requirements: RequirementView[]): string[] {
   const temp = requirements.find((r) => r.key === "max_fluid_temp_c")?.numValue ?? 0;
   const viscosity = requirements.find((r) => r.key === "max_viscosity_cp")?.numValue ?? 0;
   const sealless = /sealless/i.test(
@@ -653,7 +719,7 @@ function inferCategories(requirements: RequirementView[]): string[] {
  * as a warning rather than a silent pass — fitting an adapter changes the
  * installation and an engineer should see that it was assumed.
  */
-async function evaluateWithAdapter(
+export async function evaluateWithAdapter(
   bus: ToolBus,
   prisma: PrismaClient,
   source: SubstituteCandidate,
@@ -765,7 +831,7 @@ async function evaluateWithAdapter(
   return verdict;
 }
 
-async function persistRequirements(
+export async function persistRequirements(
   prisma: PrismaClient,
   requestId: string,
   requirements: RequirementView[],
@@ -792,7 +858,7 @@ async function persistRequirements(
   }
 }
 
-async function persistItems(
+export async function persistItems(
   prisma: PrismaClient,
   requestId: string,
   items: { rawText: string; sku: string | null; quantity: number | null; lineNumber: number }[],
@@ -813,7 +879,7 @@ async function persistItems(
 }
 
 /** Attach the run's evidence to the recommendation so the UI can read it back. */
-async function linkEvidenceToRecommendation(
+export async function linkEvidenceToRecommendation(
   prisma: PrismaClient,
   runId: string,
   recommendationId: string,
@@ -962,7 +1028,7 @@ async function createQuote(prisma: PrismaClient, args: CreateQuoteArgs) {
   });
 }
 
-async function finishRun(
+export async function finishRun(
   prisma: PrismaClient,
   runId: string,
   bus: ToolBus,
@@ -980,7 +1046,7 @@ async function finishRun(
   });
 }
 
-async function finishAsInformationRequired(
+export async function finishAsInformationRequired(
   prisma: PrismaClient,
   bus: ToolBus,
   runId: string,
@@ -1098,7 +1164,7 @@ function summariseBlockingGaps(ranked: RankedCandidate[]): string[] {
   return lines;
 }
 
-function gapToQuestion(gap: string): string {
+export function gapToQuestion(gap: string): string {
   if (gap === "quantity") return "How many units are required?";
   if (gap === "multiple line items")
     return "This enquiry covers more than one part number. Could you send each line as a separate request? This system quotes one line at a time, and I would rather ask than quote the wrong quantity against the wrong part.";
@@ -1109,7 +1175,7 @@ function gapToQuestion(gap: string): string {
   return `Could you confirm ${gap}?`;
 }
 
-async function finishAsNoViableOption(
+export async function finishAsNoViableOption(
   prisma: PrismaClient,
   bus: ToolBus,
   runId: string,

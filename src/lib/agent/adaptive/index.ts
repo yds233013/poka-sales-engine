@@ -1,0 +1,594 @@
+/**
+ * Adaptive execution: run a case with the model directing the investigation.
+ *
+ * The shape of a run:
+ *
+ *   1. Deterministic extraction runs first and persists the requirements.
+ *      This is not a shortcut — it is the grounding anchor. Every compatibility
+ *      check runs against these, and the agent cannot supply its own.
+ *   2. The agent investigates over MCP, choosing its own tools.
+ *   3. Its terminal action is handed to the *same* deterministic finalizer the
+ *      fixed pipeline uses, which re-validates everything and owns the quote,
+ *      the approvals and the numbers.
+ *   4. The structured outcome is schema-validated and grounding-checked before
+ *      it is allowed to stand.
+ *
+ * Step 3 is the whole architecture. The agent decides what to look at. It
+ * never decides what is true.
+ */
+
+import type { PrismaClient } from "@/generated/prisma";
+import type { ProductView, RequirementView } from "@/lib/domain/types";
+import { getAIProvider } from "@/lib/ai";
+import { adaptiveApiKey, adaptiveModel } from "@/lib/ai/capability";
+import { inferFromIncumbent } from "@/lib/ai/extract";
+import { recordAudit } from "@/lib/audit";
+import { ToolBus } from "@/lib/agent/toolbus";
+import { toProductView } from "@/lib/agent/mappers";
+import {
+  finalizeCase,
+  finishAsInformationRequired,
+  finishRun,
+  persistItems,
+  persistRequirements,
+  gapToQuestion,
+  type RunOutcome,
+} from "@/lib/agent/orchestrator";
+import { resolveCustomer, type SubstituteCandidate } from "@/lib/agent/tools";
+import {
+  AnthropicModelClient,
+  runAdaptiveLoop,
+  estimateCostUsd,
+  type AdaptiveResult,
+  type ModelClient,
+  type AdaptiveRunOptions,
+} from "./runtime";
+import { agentOutcomeSchema, checkGrounding, type AgentOutcome } from "./outcome";
+import type { TerminationStatus } from "./state";
+
+const PRODUCT_INCLUDE = { category: true, specs: true } as const;
+
+export class AdaptiveUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AdaptiveUnavailableError";
+  }
+}
+
+export interface AdaptiveOutcome extends RunOutcome {
+  termination: TerminationStatus;
+  agentOutcome: AgentOutcome | null;
+  groundingIssues: string[];
+  toolSequence: string[];
+  turnCount: number;
+  toolCallCount: number;
+}
+
+export async function runAdaptiveRequest(
+  prisma: PrismaClient,
+  requestId: string,
+  options: AdaptiveRunOptions = {},
+): Promise<AdaptiveOutcome> {
+  const apiKey = adaptiveApiKey();
+  const modelClient: ModelClient | null = options.modelClient ?? (apiKey ? new AnthropicModelClient(apiKey) : null);
+  if (!modelClient) {
+    throw new AdaptiveUnavailableError(
+      "Adaptive mode needs a configured model provider. Set ANTHROPIC_API_KEY, or run the deterministic workflow.",
+    );
+  }
+  const model = options.model ?? adaptiveModel();
+  const asOf = options.asOf ?? new Date();
+  const provider = getAIProvider();
+
+  const request = await prisma.salesRequest.findUniqueOrThrow({
+    where: { id: requestId },
+    include: { customer: { include: { sites: true } } },
+  });
+
+  await prisma.$transaction([
+    prisma.recommendation.deleteMany({ where: { requestId } }),
+    prisma.quote.deleteMany({ where: { requestId } }),
+    prisma.approval.deleteMany({ where: { requestId } }),
+    prisma.requirement.deleteMany({ where: { requestId } }),
+    prisma.requestItem.deleteMany({ where: { requestId } }),
+    prisma.customerResponse.deleteMany({ where: { requestId } }),
+    prisma.agentRun.deleteMany({ where: { requestId } }),
+  ]);
+
+  const run = await prisma.agentRun.create({
+    data: {
+      requestId,
+      provider: provider.id,
+      mode: "ADAPTIVE_AGENT",
+      model,
+      status: "RUNNING",
+      startedAt: asOf,
+    },
+  });
+  const startedAt = Date.now();
+
+  await prisma.salesRequest.update({ where: { id: requestId }, data: { status: "ANALYZING" } });
+  await recordAudit(prisma, requestId, {
+    type: "RUN_STARTED",
+    actor: "Poka Sales Engine",
+    summary: `Adaptive investigation started (${model}). Tool selection is model-directed; compatibility, stock, pricing and approvals remain deterministic.`,
+    detail: { mode: "ADAPTIVE_AGENT", model },
+  });
+
+  try {
+    // ── 1. Deterministic extraction — the grounding anchor ─────────────────
+    const [knownSkuRows, sites] = await Promise.all([
+      prisma.product.findMany({ select: { sku: true } }),
+      prisma.customerSite.findMany({ select: { id: true, name: true, aliases: true, city: true } }),
+    ]);
+
+    const analysis = await provider.analyzeRequest({
+      subject: request.subject,
+      body: request.rawBody,
+      context: {
+        knownSkus: knownSkuRows.map((p) => p.sku),
+        siteAliases: sites.map((s) => ({ siteId: s.id, label: s.name, tokens: [...s.aliases, s.city, s.name] })),
+        now: asOf,
+      },
+    });
+
+    let incumbent: ProductView | null = null;
+    for (const item of analysis.items) {
+      if (!item.sku || incumbent) continue;
+      const row = await prisma.product.findUnique({ where: { sku: item.sku }, include: PRODUCT_INCLUDE });
+      if (row) incumbent = toProductView(row);
+    }
+
+    let requirements: RequirementView[] = analysis.requirements;
+    if (incumbent) {
+      requirements = [...requirements, ...inferFromIncumbent(incumbent.sku, incumbent.specs, requirements)];
+    }
+    await persistRequirements(prisma, requestId, requirements);
+    await persistItems(prisma, requestId, analysis.items, prisma);
+    await prisma.salesRequest.update({
+      where: { id: requestId },
+      data: { summary: analysis.summary, requiredBy: analysis.requiredBy, siteId: analysis.siteId ?? request.siteId },
+    });
+
+    // ── 2. The agent investigates ──────────────────────────────────────────
+    //
+    // One bus for the whole run: the agent's calls and the finalizer's calls
+    // share a single ordered sequence, so the trace reads as one story rather
+    // than two interleaved series with colliding numbers.
+    const bus = new ToolBus({ prisma, runId: run.id, requestId, asOf });
+    const result = await runAdaptiveLoop(prisma, requestId, run.id, bus, modelClient, model, options);
+
+    // ── 3. Deterministic finalization ──────────────────────────────────────
+    const account = await resolveCustomer(bus, {
+      customerId: request.customerId,
+      siteHint: analysis.siteId,
+      bodyText: `${request.subject}\n${request.rawBody}`,
+    });
+
+    const knownSkus = new Set(knownSkuRows.map((r) => r.sku));
+    const quantityReq = requirements.find((r) => r.key === "quantity");
+    const quantity = quantityReq?.kind === "EXPLICIT" ? Number(quantityReq.numValue) : null;
+
+    const finished = await concludeRun({
+      prisma,
+      bus,
+      provider,
+      run,
+      request,
+      result,
+      account,
+      incumbent,
+      requirements,
+      quantity,
+      analysis,
+      asOf,
+      startedAt,
+      knownSkus,
+      model,
+    });
+
+    return finished;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await prisma.agentRun.update({
+      where: { id: run.id },
+      data: {
+        status: "FAILED",
+        termination: "FAILED",
+        error: message,
+        errorCategory: "RUNTIME_ERROR",
+        finishedAt: new Date(),
+        durationMs: Date.now() - startedAt,
+      },
+    });
+    await prisma.salesRequest.update({
+      where: { id: requestId },
+      data: {
+        status: "NEEDS_REVIEW",
+        risk: "HIGH",
+        blockedReason: `Adaptive run did not complete: ${message.split("\n")[0]}. Run the deterministic workflow instead.`,
+      },
+    });
+    await recordAudit(prisma, requestId, {
+      type: "RUN_FAILED",
+      actor: "Poka Sales Engine",
+      summary: `Adaptive investigation stopped: ${message.split("\n")[0]}`,
+    });
+    throw error;
+  }
+}
+
+// ──────────────────────── terminal action handling ─────────────────────────
+
+interface ConcludeArgs {
+  prisma: PrismaClient;
+  bus: ToolBus;
+  provider: ReturnType<typeof getAIProvider>;
+  run: { id: string };
+  request: { id: string; subject: string; ownerId: string | null; customerId: string | null };
+  result: AdaptiveResult;
+  account: Awaited<ReturnType<typeof resolveCustomer>>;
+  incumbent: ProductView | null;
+  requirements: RequirementView[];
+  quantity: number | null;
+  analysis: { openQuestions: string[] };
+  asOf: Date;
+  startedAt: number;
+  knownSkus: Set<string>;
+  model: string;
+}
+
+async function concludeRun(args: ConcludeArgs): Promise<AdaptiveOutcome> {
+  const { prisma, bus, provider, run, request, result, account, incumbent, requirements, quantity } = args;
+  const requestId = request.id;
+
+  const toolSequence = (
+    await prisma.toolCall.findMany({
+      where: { runId: run.id },
+      orderBy: { sequence: "asc" },
+      select: { toolName: true },
+    })
+  ).map((c) => c.toolName);
+
+  const persistMeta = async (
+    termination: TerminationStatus,
+    groundingIssues: string[],
+    outcome: AgentOutcome | null,
+  ) => {
+    await prisma.agentRun.update({
+      where: { id: run.id },
+      data: {
+        termination,
+        turnCount: result.turnCount,
+        toolCallCount: result.toolCallCount,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+        estimatedCostUsd: estimateCostUsd(args.model, result.inputTokens, result.outputTokens),
+        guardrailEvents: result.guardrailEvents as unknown as object,
+        outcome: outcome ? (outcome as unknown as object) : undefined,
+        errorCategory: result.errorCategory,
+        error: result.error,
+      },
+    });
+    if (groundingIssues.length > 0) {
+      await recordAudit(prisma, requestId, {
+        type: "GROUNDING_REJECTED",
+        actor: "Poka Sales Engine",
+        summary: `${groundingIssues.length} unsupported claim(s) in the agent's summary were rejected; the case was routed for review.`,
+        detail: { issues: groundingIssues },
+      });
+    }
+  };
+
+  // ── The agent could not conclude ────────────────────────────────────────
+  if (!result.terminalTool) {
+    await persistMeta(result.termination, [], null);
+    await finishRun(prisma, run.id, bus, args.startedAt, "COMPLETED");
+    await prisma.salesRequest.update({
+      where: { id: requestId },
+      data: {
+        status: "NEEDS_REVIEW",
+        risk: "HIGH",
+        blockedReason:
+          result.termination === "FAILED"
+            ? "The model provider failed mid-investigation. Run the deterministic workflow instead."
+            : "The adaptive agent hit a guardrail before reaching a conclusion. Run the deterministic workflow, or work the case by hand.",
+      },
+    });
+    await recordAudit(prisma, requestId, {
+      type: "AGENT_ESCALATED",
+      actor: "Poka Sales Engine",
+      summary:
+        result.guardrailEvents.length > 0
+          ? `Stopped by a guardrail: ${result.guardrailEvents[result.guardrailEvents.length - 1].detail}`
+          : "Stopped without reaching a conclusion.",
+      detail: { guardrails: result.guardrailEvents },
+    });
+    return {
+      runId: run.id,
+      status: "NEEDS_REVIEW",
+      recommendationId: null,
+      quoteId: null,
+      approvalCount: 0,
+      termination: result.termination,
+      agentOutcome: null,
+      groundingIssues: [],
+      toolSequence,
+      turnCount: result.turnCount,
+      toolCallCount: result.toolCallCount,
+    };
+  }
+
+  // ── Clarification ───────────────────────────────────────────────────────
+  if (result.terminalTool === "request_clarification") {
+    const payload = result.terminalPayload as { questions: string[]; reason: string };
+    const outcome = buildOutcome(result, requestId, "NEEDS_CUSTOMER_CLARIFICATION", {
+      summary: payload.reason,
+      missingInformation: payload.questions,
+      selected: null,
+    });
+    const issues = validate(outcome, result, args.knownSkus);
+    await persistMeta("NEEDS_CUSTOMER_CLARIFICATION", issues, outcome);
+
+    const finishedOutcome = await finishAsInformationRequired(
+      prisma,
+      bus,
+      run.id,
+      requestId,
+      provider,
+      account,
+      [...payload.questions, ...args.analysis.openQuestions],
+      [],
+      request.subject,
+      args.startedAt,
+    );
+    return {
+      ...finishedOutcome,
+      termination: "NEEDS_CUSTOMER_CLARIFICATION",
+      agentOutcome: outcome,
+      groundingIssues: issues,
+      toolSequence,
+      turnCount: result.turnCount,
+      toolCallCount: result.toolCallCount,
+    };
+  }
+
+  // ── Escalation ──────────────────────────────────────────────────────────
+  if (result.terminalTool === "escalate_for_review") {
+    const payload = result.terminalPayload as { reason: string; blockingDimensions: string[] };
+    const outcome = buildOutcome(result, requestId, "NEEDS_INTERNAL_REVIEW", {
+      summary: payload.reason,
+      missingInformation: [],
+      selected: null,
+    });
+    const issues = validate(outcome, result, args.knownSkus);
+    await persistMeta("NEEDS_INTERNAL_REVIEW", issues, outcome);
+
+    const blockedSkus = result.state.compatibility.filter((c) => c.safety === "BLOCKED");
+    await prisma.recommendation.create({
+      data: {
+        requestId,
+        outcome: "NO_VIABLE_OPTION",
+        headline:
+          blockedSkus.length > 0
+            ? `No catalog product satisfies this requirement — ${blockedSkus.length} candidate(s) evaluated and rejected`
+            : "Escalated for specialist review",
+        rationale: payload.reason,
+        risk: "BLOCKED",
+      },
+    });
+    await finishRun(prisma, run.id, bus, args.startedAt, "COMPLETED");
+    await prisma.salesRequest.update({
+      where: { id: requestId },
+      data: {
+        status: "BLOCKED",
+        risk: "BLOCKED",
+        blockedReason: payload.blockingDimensions?.length
+          ? `Cannot be met from catalog product: ${payload.blockingDimensions.join(", ")}.`
+          : payload.reason,
+      },
+    });
+    await recordAudit(prisma, requestId, {
+      type: "RECOMMENDATION_BLOCKED",
+      actor: "Poka Sales Engine",
+      summary: payload.reason.slice(0, 200),
+      detail: { blockingDimensions: payload.blockingDimensions ?? [] },
+    });
+    return {
+      runId: run.id,
+      status: "BLOCKED",
+      recommendationId: null,
+      quoteId: null,
+      approvalCount: 0,
+      termination: "NEEDS_INTERNAL_REVIEW",
+      agentOutcome: outcome,
+      groundingIssues: issues,
+      toolSequence,
+      turnCount: result.turnCount,
+      toolCallCount: result.toolCallCount,
+    };
+  }
+
+  // ── Quote draft — the deterministic finalizer takes over ────────────────
+  const payload = result.terminalPayload as { candidateSkus: string[]; rationale: string };
+  const candidateSources = await buildCandidateSources(prisma, payload.candidateSkus, incumbent);
+
+  const finished = await finalizeCase(
+    prisma,
+    bus,
+    provider,
+    {
+      runId: run.id,
+      requestId,
+      subject: request.subject,
+      ownerId: request.ownerId,
+      account,
+      incumbent,
+      requirements,
+      quantity: quantity!,
+      requiredBy: (await prisma.salesRequest.findUniqueOrThrow({ where: { id: requestId } })).requiredBy,
+      destinationZone: account.siteZone ?? "MIDWEST",
+      candidateSources,
+      openQuestions: args.analysis.openQuestions,
+      asOf: args.asOf,
+    },
+    args.startedAt,
+  );
+
+  // `Recommendation.productId` is a plain column, so the selected part is
+  // read from the winning candidate rather than a relation.
+  const recommendation = finished.recommendationId
+    ? await prisma.recommendation.findUnique({
+        where: { id: finished.recommendationId },
+        include: { candidates: { include: { product: true }, orderBy: { rank: "asc" } } },
+      })
+    : null;
+  const winner = recommendation?.candidates.find((c) => c.verdict === "RECOMMENDED") ?? null;
+
+  const outcome = buildOutcome(result, requestId, "READY_FOR_APPROVAL", {
+    summary: recommendation?.rationale ?? payload.rationale,
+    missingInformation: [],
+    selected: winner?.product.sku ?? null,
+    alternatives:
+      recommendation?.candidates
+        .filter((c) => c.verdict !== "RECOMMENDED")
+        .slice(0, 12)
+        .map((c) => ({ sku: c.product.sku, verdict: c.verdict, reason: c.reason.slice(0, 400) })) ?? [],
+  });
+
+  const issues = validate(outcome, result, args.knownSkus);
+  await persistMeta(issues.length > 0 ? "NEEDS_INTERNAL_REVIEW" : "READY_FOR_APPROVAL", issues, outcome);
+
+  // An ungrounded summary does not get quietly rewritten — the case is routed
+  // to a person, because a recommendation nobody can trace is worth less than
+  // none. The quote and approvals the finalizer produced still stand; they were
+  // never the model's to make.
+  if (issues.length > 0) {
+    await prisma.salesRequest.update({
+      where: { id: requestId },
+      data: {
+        status: "NEEDS_REVIEW",
+        risk: "HIGH",
+        blockedReason: `The agent's summary contained ${issues.length} claim(s) no tool supported: ${issues[0]}`,
+      },
+    });
+  }
+
+  return {
+    ...finished,
+    status: issues.length > 0 ? "NEEDS_REVIEW" : finished.status,
+    termination: issues.length > 0 ? "NEEDS_INTERNAL_REVIEW" : "READY_FOR_APPROVAL",
+    agentOutcome: outcome,
+    groundingIssues: issues,
+    toolSequence,
+    turnCount: result.turnCount,
+    toolCallCount: result.toolCallCount,
+  };
+}
+
+function buildOutcome(
+  result: AdaptiveResult,
+  caseId: string,
+  status: TerminationStatus,
+  parts: {
+    summary: string;
+    missingInformation: string[];
+    selected: string | null;
+    alternatives?: { sku: string; verdict: string; reason: string }[];
+  },
+): AgentOutcome {
+  const blocked = result.state.compatibility.filter((c) => c.safety === "BLOCKED");
+  const warned = result.state.compatibility.filter((c) => c.warnings.length > 0);
+
+  const draft: AgentOutcome = {
+    caseId,
+    status,
+    resolvedCustomer: result.state.customer?.name ?? null,
+    resolvedProduct: parts.selected,
+    alternatives:
+      parts.alternatives ??
+      blocked.slice(0, 12).map((c) => ({
+        sku: c.sku,
+        verdict: "REJECTED",
+        reason: `Failed on ${c.hardFailures.map((f) => `${f.dimension} (${f.actual} against ${f.required})`).join("; ")}`,
+      })),
+    technicalEvidence: result.state.evidenceCited.slice(0, 20),
+    missingInformation: parts.missingInformation.slice(0, 10),
+    riskFlags: [
+      ...warned.flatMap((c) => c.warnings.map((w) => `${c.sku}: ${w}`)),
+      ...result.guardrailEvents.map((g) => `Guardrail: ${g.kind}`),
+    ].slice(0, 10),
+    recommendationSummary: parts.summary.slice(0, 2000),
+  };
+
+  const parsed = agentOutcomeSchema.safeParse(draft);
+  if (parsed.success) return parsed.data;
+
+  // Schema failure is our bug, not the model's — fall back to a minimal valid
+  // outcome rather than persisting something that violates its own contract.
+  return {
+    caseId,
+    status,
+    resolvedCustomer: null,
+    resolvedProduct: null,
+    alternatives: [],
+    technicalEvidence: [],
+    missingInformation: [],
+    riskFlags: ["Structured outcome failed schema validation and was reduced."],
+    recommendationSummary: parts.summary.slice(0, 2000) || "No summary was produced for this run.",
+  };
+}
+
+function validate(outcome: AgentOutcome, result: AdaptiveResult, knownSkus: Set<string>): string[] {
+  return checkGrounding(outcome, result.state, knownSkus).map((i) => `${i.kind}: ${i.detail}`);
+}
+
+/**
+ * Turn the agent's chosen part numbers into candidate sources.
+ *
+ * Curated replacement links are re-attached here rather than taken from the
+ * agent, so an adapter requirement cannot be dropped by omission.
+ */
+async function buildCandidateSources(
+  prisma: PrismaClient,
+  skus: string[],
+  incumbent: ProductView | null,
+): Promise<SubstituteCandidate[]> {
+  const rows = await prisma.product.findMany({
+    where: { sku: { in: skus.map((s) => s.toUpperCase()) } },
+    include: PRODUCT_INCLUDE,
+  });
+  const byId = new Map(rows.map((r) => [r.id, toProductView(r)]));
+
+  const links = incumbent
+    ? await prisma.substitutionLink.findMany({
+        where: { fromProductId: incumbent.id, toProductId: { in: rows.map((r) => r.id) } },
+        include: { toProduct: { include: PRODUCT_INCLUDE } },
+      })
+    : [];
+
+  const adapterSkus = links.map((l) => l.requiresSku).filter((s): s is string => Boolean(s));
+  const adapters = adapterSkus.length
+    ? await prisma.product.findMany({ where: { sku: { in: adapterSkus } }, include: PRODUCT_INCLUDE })
+    : [];
+
+  const ordered = skus
+    .map((sku) => rows.find((r) => r.sku === sku.toUpperCase()))
+    .filter((r): r is NonNullable<typeof r> => Boolean(r));
+
+  return ordered.map((row) => {
+    const link = links.find((l) => l.toProductId === row.id);
+    return {
+      product: byId.get(row.id)!,
+      linkKind: link?.kind ?? null,
+      linkNote: link?.note ?? null,
+      requiresSku: link?.requiresSku ?? null,
+      adapter: link?.requiresSku
+        ? (adapters.filter((a) => a.sku === link.requiresSku).map(toProductView)[0] ?? null)
+        : null,
+    };
+  });
+}
+
+export { gapToQuestion };
+export type { AgentOutcome };

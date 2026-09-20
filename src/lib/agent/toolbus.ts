@@ -14,6 +14,7 @@
 
 import type { PrismaClient } from "@/generated/prisma";
 import type { SafetyClass } from "@/lib/domain/types";
+import { contractFor, type ToolEffect } from "@/lib/mcp/contracts";
 
 export interface EvidenceDraft {
   kind: "document" | "spec" | "inventory" | "pricing" | "policy" | "account";
@@ -29,6 +30,12 @@ export interface ToolResult<T> {
   status?: "OK" | "EMPTY" | "ERROR" | "BLOCKED";
   safety?: SafetyClass;
   evidence?: EvidenceDraft[];
+}
+
+/** Where a call came from, so the trace can separate agent choices from pipeline steps. */
+export interface CallOrigin {
+  modelInitiated: boolean;
+  effect: ToolEffect;
 }
 
 export interface ToolContext {
@@ -51,10 +58,43 @@ export class ToolBus {
   private sequence = 0;
   readonly calls: RecordedCall[] = [];
 
+  /**
+   * Attribution for the call currently being executed.
+   *
+   * The MCP layer sets this around a model-directed invocation so the
+   * persisted trace distinguishes "the agent chose to do this" from "the
+   * pipeline did this on the way to a quote". Calls are executed one at a
+   * time, so a single field is sufficient and avoids threading an extra
+   * argument through every tool signature.
+   */
+  origin: CallOrigin | null = null;
+
+  /**
+   * Attribution for a call the caller did not explicitly tag.
+   *
+   * Pipeline steps are not model-initiated, and their effect is whatever the
+   * tool's own contract declares — a compatibility check is a deterministic
+   * computation whoever asked for it.
+   */
+  private defaultOrigin(toolName: string): CallOrigin {
+    return { modelInitiated: false, effect: contractFor(toolName)?.effect ?? "DETERMINISTIC_COMPUTATION" };
+  }
+
   constructor(private readonly ctx: ToolContext) {}
 
   get context(): ToolContext {
     return this.ctx;
+  }
+
+  /** Run `fn` with the given attribution, restoring the previous one after. */
+  async withOrigin<T>(origin: CallOrigin, fn: () => Promise<T>): Promise<T> {
+    const previous = this.origin;
+    this.origin = origin;
+    try {
+      return await fn();
+    } finally {
+      this.origin = previous;
+    }
   }
 
   /**
@@ -71,6 +111,7 @@ export class ToolBus {
     const sequence = ++this.sequence;
     const startedAt = new Date();
     const started = performance.now();
+    const origin = this.origin ?? this.defaultOrigin(toolName);
 
     try {
       const result = await fn(this.ctx);
@@ -86,6 +127,8 @@ export class ToolBus {
           status: result.status ?? "OK",
           safety: result.safety ?? "AUTO_SAFE",
           summary: result.summary,
+          effect: origin.effect,
+          modelInitiated: origin.modelInitiated,
           startedAt,
           durationMs,
           evidence: result.evidence?.length
@@ -123,6 +166,8 @@ export class ToolBus {
           safety: "BLOCKED",
           summary: `${toolName} failed: ${message}`,
           error: message,
+          effect: origin.effect,
+          modelInitiated: origin.modelInitiated,
           startedAt,
           durationMs,
         },

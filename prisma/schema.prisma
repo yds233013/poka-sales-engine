@@ -592,23 +592,65 @@ enum RunStatus {
   HALTED_FOR_APPROVAL
 }
 
+/// How a run was orchestrated. Both modes use the same engines, the same
+/// catalog and the same approval policy — only the orchestration differs.
+enum ExecutionMode {
+  /// Fixed tool pipeline. Offline, reproducible, always available.
+  DETERMINISTIC
+  /// Model-directed tool selection over MCP. Requires provider credentials.
+  ADAPTIVE_AGENT
+}
+
+/// Where an adaptive run ended up. Deterministic runs record COMPLETED.
+enum TerminationStatus {
+  COMPLETED
+  READY_FOR_APPROVAL
+  READY_TO_DRAFT
+  NEEDS_CUSTOMER_CLARIFICATION
+  NEEDS_INTERNAL_REVIEW
+  BLOCKED_TECHNICAL
+  /// A guardrail stopped the run — turn cap, tool cap, timeout or a loop.
+  GUARDRAIL_STOP
+  FAILED
+}
+
 model AgentRun {
-  id          String    @id @default(cuid())
+  id          String        @id @default(cuid())
   requestId   String
-  status      RunStatus @default(RUNNING)
+  status      RunStatus     @default(RUNNING)
+  mode        ExecutionMode @default(DETERMINISTIC)
   /// "mock" or the model id when a real provider is configured.
   provider    String
-  startedAt   DateTime  @default(now())
+  /// Model identifier for an adaptive run; null for deterministic.
+  model       String?
+  startedAt   DateTime      @default(now())
   finishedAt  DateTime?
   durationMs  Int?
   error       String?
+  /// Coarse failure bucket, for the eval harness. Never a stack trace.
+  errorCategory String?
   /// Operator-readable narrative steps (no chain-of-thought).
   trace       Json?
+
+  // ── Adaptive-run observability. Null on deterministic runs rather than
+  //    zero, so "not applicable" and "measured zero" stay distinguishable.
+  termination      TerminationStatus?
+  turnCount        Int?
+  toolCallCount    Int?
+  inputTokens      Int?
+  outputTokens     Int?
+  /// Estimated USD cost. Only set when the provider reported token usage.
+  estimatedCostUsd Decimal? @db.Decimal(10, 6)
+  /// Schema-validated structured result produced by an adaptive run.
+  outcome          Json?
+  /// Guardrail trips recorded during the run (loop detection, caps, retries).
+  guardrailEvents  Json?
 
   request   SalesRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
   toolCalls ToolCall[]
 
   @@index([requestId])
+  @@index([mode])
   @@map("agent_runs")
 }
 
@@ -625,6 +667,15 @@ enum SafetyClass {
   BLOCKED
 }
 
+/// What a tool does to the world. The agent is told this for every tool it
+/// can call, and the runtime refuses mutations outside the allowed set.
+enum ToolEffect {
+  READ_ONLY
+  DETERMINISTIC_COMPUTATION
+  MUTATION
+  HUMAN_GATED_MUTATION
+}
+
 model ToolCall {
   id         String      @id @default(cuid())
   runId      String
@@ -634,6 +685,9 @@ model ToolCall {
   output     Json?
   status     ToolStatus
   safety     SafetyClass @default(AUTO_SAFE)
+  effect     ToolEffect  @default(READ_ONLY)
+  /// True when the model chose this call; false for pipeline-driven calls.
+  modelInitiated Boolean @default(false)
   /// Operator-facing one-liner: "Checked inventory for PX-440 across 4 sites".
   summary    String
   error      String?
