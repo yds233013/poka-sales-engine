@@ -69,7 +69,7 @@ export const CUSTOMERS: CustomerDef[] = [
     ],
     contacts: [
       { key: "hollis", name: "Ben Hollis", email: "b.hollis@cardinalprocessing.example", phone: "+1 214 555 0142", jobTitle: "Maintenance superintendent", siteKey: "dallas" },
-      { key: "frazier", name: "Nadia Frazier", email: "n.frazier@cardinalprocessing.example", jobTitle: "Procurement lead", siteKey: "dallas" },
+      { key: "frazier", name: "Nadia Frazier", email: "n.frazier@cardinalprocessing.example", jobTitle: "Procurement lead" },
     ],
   },
   {

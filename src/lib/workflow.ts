@@ -148,6 +148,15 @@ export async function releaseQuote(
     throw new WorkflowError("This case is blocked — no quote can be released from it.");
   }
 
+  // Releasing an already-released quote is a no-op, not a re-draft.
+  // Regenerating here would silently discard an edit a salesperson had made
+  // to the letter, which is the sort of data loss nobody reports and everybody
+  // stops trusting the tool over.
+  if (quote.status === "APPROVED" || quote.status === "SENT") {
+    const existing = await prisma.customerResponse.count({ where: { requestId } });
+    if (existing > 0) return quote.id;
+  }
+
   // The structural gate. Throws if anything is still open or was rejected.
   // The engine is deliberately dependency-free and raises a plain Error; this
   // layer translates it so every caller sees one failure type.

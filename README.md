@@ -96,8 +96,8 @@ executed trace, not a narration written afterwards. Chain-of-thought is never ca
 | `src/lib/ai/` | Provider abstraction, the deterministic extractor, the mock provider, the optional Claude provider. |
 | `src/lib/workflow.ts` | Human transitions — approval decisions, quote release, response edits, case completion. Re-derives its own preconditions. |
 | `prisma/seed/` | The synthetic world: catalog generator, rules, documentation, commercial data, accounts, scenarios. |
-| `tests/unit/` | 153 tests over the engines, with no database. |
-| `tests/integration/` | 49 tests running the real orchestrator against a real seeded PostgreSQL database. |
+| `tests/unit/` | 157 tests over the engines, with no database. |
+| `tests/integration/` | 50 tests running the real orchestrator against a real seeded PostgreSQL database. |
 
 ## 4. The human approval model
 
@@ -273,8 +273,8 @@ No pricing, inventory, compatibility or approval decision passes through it.
 | `npm run db:setup` | Generate client, push schema, seed and run the agent |
 | `npm run db:seed` | Re-seed only (resets the demo to its starting state) |
 | `npm run db:studio` | Prisma Studio |
-| `npm run test:unit` | 153 engine tests, no database, ~1.5s |
-| `npm run test:integration` | 49 tests against a throwaway seeded database |
+| `npm run test:unit` | 157 engine tests, no database, ~1.5s |
+| `npm run test:integration` | 50 tests against a throwaway seeded database |
 | `npm test` | Both suites |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint |
@@ -283,7 +283,7 @@ No pricing, inventory, compatibility or approval decision passes through it.
 
 ## 9. Testing
 
-**202 tests.** The split is deliberate: the engines take plain data and return plain data, never
+**207 tests.** The split is deliberate: the engines take plain data and return plain data, never
 importing Prisma, which is what makes it practical to write adversarial tests for pricing, ATP and
 approval policy without a fixture scaffold.
 

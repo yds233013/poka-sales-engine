@@ -164,12 +164,12 @@ Open **REQ-2044, Sierra Mining Supply**.
 | **REQ-2035** Northgate Paper | Five products are technically valid; only one can be on site before the shutdown. Deliverability outranks engineering fit, and the system says so. |
 | **REQ-2030** Atlas Industrial | A strategic account's 26% standing discount takes margin to 11%. Three approvals, and the policy text that fired each one. |
 | **REQ-2032** Keystone Coatings | The requested part is discontinued; the replacement only fits with an adapter — quoted as a line — and the engineer has sent it back asking for a site measurement before he signs. |
-| **REQ-2046** Cardinal, Bayonne | Unworked. Hit **Run analysis** and watch it go from `NEW` to a costed recommendation in about 300 ms. |
+| **REQ-2046** Cardinal, Bayonne | Unworked. Hit **Run analysis** and watch it go from `NEW` to a costed recommendation in well under a second. |
 
 ## Questions you will probably get
 
 **"Is this just an LLM wrapper?"**
-Open any case's **What the engine did**. Twenty-six tool calls. Then point at the trade: the model
+Open any case's **What the engine did**. Twenty-six recorded tool calls on this case. Then point at the trade: the model
 read the email and phrased the rationale. It did not pick the pump, compute the price, or decide
 the approval. Turn the API key off entirely — `AI_PROVIDER=mock` is the default and the whole
 workflow still runs.

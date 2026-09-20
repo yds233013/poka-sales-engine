@@ -133,6 +133,7 @@ export async function runSalesRequest(
     const account = await resolveCustomer(bus, {
       customerId: request.customerId,
       siteHint: analysis.siteId,
+      bodyText: `${request.subject}\n${request.rawBody}`,
     });
 
     // ── 3. Resolve part numbers ────────────────────────────────────────────
@@ -431,10 +432,23 @@ export async function runSalesRequest(
       });
     }
 
+    await recordAudit(prisma, requestId, {
+      type: "RECOMMENDATION_GENERATED",
+      actor: "Poka Sales Engine",
+      summary: summary.headline,
+      detail: { outcome, quoteNumber: quote.quoteNumber, approvals: approvals.length },
+    });
+
     const autoRelease = canAutoRelease(approvals);
     const status = autoRelease ? "RESPONSE_READY" : "READY_FOR_APPROVAL";
 
     if (autoRelease) {
+      await recordAudit(prisma, requestId, {
+        type: "QUOTE_RELEASED",
+        actor: "Poka Sales Engine",
+        summary: `Quote ${quote.quoteNumber} released without approval — every policy check was inside limits.`,
+        detail: { quoteNumber: quote.quoteNumber, total: quote.total.toString() },
+      });
       await generateCustomerResponse(prisma, requestId, asOf);
     }
 
@@ -444,12 +458,6 @@ export async function runSalesRequest(
     });
 
     await finishRun(prisma, run.id, bus, startedAt, "COMPLETED");
-    await recordAudit(prisma, requestId, {
-      type: "RECOMMENDATION_GENERATED",
-      actor: "Poka Sales Engine",
-      summary: summary.headline,
-      detail: { outcome, quoteNumber: quote.quoteNumber, approvals: approvals.length },
-    });
 
     return {
       runId: run.id,
@@ -799,7 +807,9 @@ async function createQuote(prisma: PrismaClient, args: CreateQuoteArgs) {
       requestId: args.requestId,
       customerId: args.customerId,
       siteId: args.siteId,
-      status: args.pendingApproval ? "PENDING_APPROVAL" : "DRAFT",
+      // Nothing in policy stopped this one, so it is released on creation —
+      // leaving it DRAFT would contradict the case status the operator sees.
+      status: args.pendingApproval ? "PENDING_APPROVAL" : "APPROVED",
       subtotal: centsToNumber(args.totals.subtotalCents),
       discountTotal: centsToNumber(args.totals.discountTotalCents),
       freightCost: centsToNumber(args.totals.freightCents),

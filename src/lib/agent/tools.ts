@@ -57,11 +57,45 @@ export interface ResolvedCustomer {
   paymentTerms: number | null;
 }
 
+/**
+ * Pick the contact the message actually came from.
+ *
+ * Order matters: a name or address appearing in the message beats the contact
+ * attached to the ship-to site, which beats the account's first contact.
+ * Getting this wrong means addressing the reply to the wrong person, which is
+ * exactly the kind of small wrongness that destroys trust in an assistant.
+ */
+function matchContact<T extends { name: string; email: string; siteId: string | null }>(
+  contacts: T[],
+  bodyText: string | null,
+  siteId: string | null,
+): { contact: T | null; matchedOn: "message" | "site" | "account" | "none" } {
+  if (bodyText) {
+    const haystack = bodyText.toLowerCase();
+    for (const contact of contacts) {
+      const surname = contact.name.split(/\s+/).slice(-1)[0].toLowerCase();
+      const local = contact.email.split("@")[0].toLowerCase();
+      if (
+        haystack.includes(contact.name.toLowerCase()) ||
+        haystack.includes(contact.email.toLowerCase()) ||
+        (surname.length > 3 && haystack.includes(surname)) ||
+        (local.length > 4 && haystack.includes(local))
+      ) {
+        return { contact, matchedOn: "message" };
+      }
+    }
+  }
+  const atSite = siteId ? contacts.find((c) => c.siteId === siteId) : undefined;
+  if (atSite) return { contact: atSite, matchedOn: "site" };
+  if (contacts[0]) return { contact: contacts[0], matchedOn: "account" };
+  return { contact: null, matchedOn: "none" };
+}
+
 export async function resolveCustomer(
   bus: ToolBus,
-  input: { customerId: string | null; siteHint: string | null },
+  input: { customerId: string | null; siteHint: string | null; bodyText?: string | null },
 ): Promise<ResolvedCustomer> {
-  return bus.run("resolve_customer", input, async (ctx) => {
+  return bus.run("resolve_customer", { customerId: input.customerId, siteHint: input.siteHint }, async (ctx) => {
     if (!input.customerId) {
       return {
         output: emptyCustomer(),
@@ -89,7 +123,11 @@ export async function resolveCustomer(
       customer.sites.find((s) => s.isPrimary) ||
       customer.sites[0] ||
       null;
-    const contact = customer.contacts.find((c) => c.siteId === site?.id) ?? customer.contacts[0] ?? null;
+    const { contact, matchedOn } = matchContact(
+      customer.contacts,
+      input.bodyText ?? null,
+      site?.id ?? null,
+    );
 
     const output: ResolvedCustomer = {
       customerId: customer.id,
@@ -110,6 +148,16 @@ export async function resolveCustomer(
       output,
       summary: `Resolved ${customer.name} (${customer.accountNumber}, ${customer.tier.toLowerCase()} tier)${
         site ? ` shipping to ${site.name}, ${site.city} ${site.state}` : ""
+      }${
+        contact
+          ? `. Contact ${contact.name}${
+              matchedOn === "message"
+                ? " — named in the message"
+                : matchedOn === "site"
+                  ? " — the contact on file for that site"
+                  : " — the account's primary contact, not named in the message"
+            }`
+          : ". No contact on file"
       }.`,
       evidence: [
         {

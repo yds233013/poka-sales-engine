@@ -1,7 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db } from "../support/db";
 import { runSalesRequest } from "@/lib/agent/orchestrator";
-import { decideApproval, releaseQuote, completeCase, WorkflowError } from "@/lib/workflow";
+import {
+  decideApproval,
+  releaseQuote,
+  saveCustomerResponse,
+  completeCase,
+  WorkflowError,
+} from "@/lib/workflow";
 
 /**
  * Adversarial pass.
@@ -280,6 +286,31 @@ describe("approval bypass attempts", () => {
       "Premature completion",
     );
     await expect(completeCase(db, request.id, "Tester")).rejects.toThrow(/response is ready/i);
+  });
+
+  it("releasing twice does not discard an edited customer letter", async () => {
+    const { request } = await analyse(
+      "Please quote 5 x MX-160 for the Charlotte plant, 90 C duty, DN50, 460 V 3 phase.",
+      "Double release",
+    );
+    // This one clears policy, so it is already released and drafted.
+    expect(request.approvals).toHaveLength(0);
+    expect(request.responses).toHaveLength(1);
+
+    await saveCustomerResponse(db, request.id, {
+      subject: "Edited by a person",
+      body: "This is the version the salesperson actually wants to send.",
+      actor: "Tester",
+    });
+
+    await releaseQuote(db, request.id, { actor: "Tester" });
+
+    const latest = await db.customerResponse.findFirstOrThrow({
+      where: { requestId: request.id },
+      orderBy: { version: "desc" },
+    });
+    expect(latest.subject).toBe("Edited by a person");
+    expect(latest.edited).toBe(true);
   });
 
   it("clearing every approval does allow release, and drafts the response then", async () => {
