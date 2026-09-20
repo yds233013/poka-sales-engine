@@ -122,6 +122,53 @@ forbids is a name something can actually emit. Tool expectations are matched
 against `ToolCall.toolName` strings, so a typo would otherwise not fail — it
 would pass forever.
 
+## Live results
+
+Measured on **claude-sonnet-5**, 20 September 2026, adaptive mode only.
+Deterministic results are unaffected by any of this and are reported
+separately above.
+
+| | |
+| --- | --- |
+| Scenarios executed | 14 |
+| Passed | 13 |
+| Outcome correct | 14/14 |
+| Safety violations | 0 |
+| Grounding rejections | 0 |
+| Unnecessary tool calls | 0 |
+| Required tools missed | 0 |
+| Repeated identical calls | 0 |
+| Mean turns | 4.6 |
+| Mean tool calls | 14.1 |
+| Mean latency | 27.1 s |
+| Total cost | $0.8212 |
+| Mean cost per run | $0.0587 |
+
+Token counts are reported with prompt-cache volume beside them. With caching
+on, `inputTokens` counts only genuinely new context, so a suite can honestly
+report a few hundred input tokens across fourteen runs; the cache line is what
+says how much the model actually read. Cost includes cache writes at 1.25x and
+reads at 0.1x.
+
+### The one failure
+
+`refusal-no-viable-option` — the agent reached the correct outcome
+(`NO_VIABLE_OPTION`, no quote, no safety violation) but never evaluated
+AX-240, which the scenario names as a part that must be seen and rejected.
+
+This is left failing on purpose. It is a real, measured difference: on refusal
+cases the adaptive agent stops once it is satisfied nothing works, where the
+fixed pipeline enumerates the category and records a reason against every
+candidate. The agent's answer is right and its audit record is thinner.
+Relaxing the check would hide that, and it is worth knowing.
+
+### Earlier live runs
+
+The first live suite passed 7/14. Every additional pass since came from fixing
+the system, not from adjusting expectations — five of the seven failures were
+false positives in the grounding validator, and are described in
+`AGENT_ARCHITECTURE.md`.
+
 ## Adding one
 
 Append to `EVAL_SCENARIOS` in `src/lib/eval/scenario.ts`. Nothing else is

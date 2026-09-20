@@ -26,6 +26,69 @@ function pad(value: string, width: number): string {
   return value.length > width ? `${value.slice(0, width - 1)}…` : value.padEnd(width);
 }
 
+/**
+ * Aggregate what was actually measured.
+ *
+ * Only over runs that executed — a NOT_RUN scenario contributes nothing, and
+ * averaging it in as a zero would understate cost and overstate speed. Token
+ * and cost lines appear only where the provider reported usage.
+ */
+function printAggregates(results: EvalResult[]): void {
+  if (results.length === 0) return;
+  const adaptive = results.filter((r) => r.mode === "ADAPTIVE_AGENT");
+  const mean = (values: number[]) => (values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0);
+  const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
+
+  const rows: [string, string][] = [
+    ["scenarios executed", String(results.length)],
+    ["outcome correct", `${results.filter((r) => r.checks.find((c) => c.name === "outcome")?.passed ?? true).length}/${results.length}`],
+    ["safety violations", String(sum(results.map((r) => r.metrics.safetyViolations)))],
+    ["grounding rejections", String(sum(results.map((r) => r.metrics.groundingIssues)))],
+    ["runs with a grounding rejection", `${results.filter((r) => r.metrics.groundingIssues > 0).length}/${results.length}`],
+    ["unnecessary tool calls", String(sum(results.map((r) => r.metrics.unnecessaryCalls)))],
+    ["required tools missed", String(sum(results.map((r) => r.metrics.missingRequiredTools.length)))],
+    ["repeated identical calls", String(sum(results.map((r) => r.metrics.repeatedCalls)))],
+    ["mean tool calls", mean(results.map((r) => r.metrics.toolCalls)).toFixed(1)],
+    ["mean latency", `${Math.round(mean(results.map((r) => r.metrics.durationMs)))} ms`],
+  ];
+
+  const withTurns = adaptive.filter((r) => r.metrics.turnCount != null);
+  if (withTurns.length) rows.push(["mean turns", mean(withTurns.map((r) => r.metrics.turnCount!)).toFixed(1)]);
+
+  const withTokens = adaptive.filter((r) => r.metrics.inputTokens != null || r.metrics.outputTokens != null);
+  if (withTokens.length) {
+    rows.push([
+      "total tokens",
+      `${sum(withTokens.map((r) => r.metrics.inputTokens ?? 0)).toLocaleString()} in / ${sum(
+        withTokens.map((r) => r.metrics.outputTokens ?? 0),
+      ).toLocaleString()} out`,
+    ]);
+  }
+  const withCache = adaptive.filter((r) => r.metrics.cacheReadTokens != null);
+  if (withCache.length) {
+    // Reported separately and never folded into the input line: with caching
+    // on, "130 input tokens across 14 runs" is true and tells you nothing
+    // about how much context the model actually read.
+    rows.push([
+      "prompt cache",
+      `${sum(withCache.map((r) => r.metrics.cacheWriteTokens ?? 0)).toLocaleString()} written / ${sum(
+        withCache.map((r) => r.metrics.cacheReadTokens ?? 0),
+      ).toLocaleString()} read`,
+    ]);
+  }
+
+  const withCost = adaptive.filter((r) => r.metrics.estimatedCostUsd != null);
+  if (withCost.length) {
+    rows.push(["total estimated cost", `$${sum(withCost.map((r) => r.metrics.estimatedCostUsd!)).toFixed(4)}`]);
+    rows.push(["mean cost per run", `$${mean(withCost.map((r) => r.metrics.estimatedCostUsd!)).toFixed(4)}`]);
+    rows.push(["cost basis", "includes cache writes at 1.25x and reads at 0.1x"]);
+  }
+
+  console.log("  Aggregate over executed runs:");
+  for (const [label, value] of rows) console.log(`    ${label.padEnd(34)} ${value}`);
+  console.log("");
+}
+
 function line(result: EvalResult): string {
   const status =
     result.status === "PASS"
@@ -89,6 +152,7 @@ async function main() {
   let expectedGaps = 0;
   const failures: { scenario: string; mode: string; detail: string }[] = [];
   const gaps: { scenario: string; reason: string }[] = [];
+  const executed: EvalResult[] = [];
 
   for (const scenario of scenarios) {
     console.log(`\n  ${scenario.title}`);
@@ -100,6 +164,7 @@ async function main() {
         continue;
       }
       ran += 1;
+      executed.push(result);
       if (result.status === "PASS") {
         passed += 1;
       } else if (result.status === "EXPECTED_GAP") {
@@ -123,6 +188,8 @@ async function main() {
   if (failed > 0) parts.push(`${failed} failed`);
   if (notRun > 0) parts.push(`${notRun} not run (no provider configured)`);
   console.log(`  ${parts.join(", ")}\n`);
+
+  printAggregates(executed);
 
   if (gaps.length > 0) {
     console.log("  Expected baseline gaps — scenarios the fixed pipeline cannot work:");

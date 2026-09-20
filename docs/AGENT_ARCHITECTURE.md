@@ -215,6 +215,36 @@ recommendation text `finalizeCase` assembled. The latter is authoritative by
 construction, and grading it against the agent's own state would flag correct
 engine figures the agent never had to look up.
 
+### What live running changed
+
+Grounding was first exercised against a scripted model, which only ever sends
+arguments we wrote for it. A real model writes its own prose, and five of the
+first live suite's seven failures turned out to be the validator rejecting
+correct work:
+
+| Rejected | Why it was wrong |
+| --- | --- |
+| `REQ-2036` as a fabricated part | A case reference from `get_customer_history` is shaped like a part number |
+| `PX-450` as a fabricated part | Saying "PX-450 is not one of ours" requires naming it |
+| `RG-120` as hard-failed | The agent saw it fail on `connection`; the finalizer then fitted the adapter that resolves exactly that |
+| `$6,364` as an invented price | The engines format to two decimals; the model wrote the round form |
+| `$154,303.72` as an invented total | Freight lands after `calculate_price`, so the total exists only on the finalizer's quote |
+
+Four of the five are the same mistake: **grading the finalizer's output
+against the agent's earlier snapshot.** Where the deterministic finalizer has
+ruled, grounding is given its ruling — its compatibility verdict on the
+winning candidate and its own money — and the agent's state is used only to
+catch a product that never went through the engine at all.
+
+A validator that rejects correct work is not a safe default. It routes sound
+cases to a person, which is the most expensive failure this layer has, and it
+trains whoever reads the queue to ignore it.
+
+The rejections that remained were true positives every time, and all of them
+were the model asserting a number in prose that no tool had produced — a
+fabricated stock figure, an invented price. That is the shape of error this
+layer exists for, and it caught every one.
+
 ## 8. Trust boundary
 
 Three kinds of content reach the model, and they are not equal:

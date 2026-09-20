@@ -351,7 +351,64 @@ as request content, policy still applies), double approval decisions, release wi
 pending, release after a rejection, a sales rep attempting an engineer's sign-off, and completion
 before a response exists. Every one is expected to fail closed.
 
-## 10. Limitations
+## 10. Live agent evaluation
+
+Everything above runs offline. This section is the one part that required a
+real model, and it is reported separately for that reason.
+
+**Model tested:** `claude-sonnet-5`, via the Messages API, 20 September 2026.
+Only orchestration was live — request extraction, compatibility, inventory,
+pricing, freight, margin and approval policy stayed deterministic, so the
+deterministic baseline and the REQ-2041 regression are unaffected by it.
+
+**Scale:** 14 evaluation scenarios plus four bespoke adversarial requests,
+run adaptively end to end. Roughly 40 real-model runs across the exercise.
+
+**Outcome results**
+
+| | |
+| --- | --- |
+| Scenarios passed | 13 / 14 |
+| Outcome correct | 14 / 14 |
+| Unnecessary tool calls | 0 |
+| Required tools missed | 0 |
+| Mean turns / tool calls | 4.6 / 14.1 |
+| Mean latency | 27.1 s |
+| Total cost | $0.8212 ($0.0587 per run) |
+
+REQ-2041 run live reached PX-440 ×12, $102,808.88, 30.38% margin and three
+approvals — identical to the deterministic result, by its own route: it
+evaluated four candidate substitutes and rejected three on hard compatibility
+before pricing the winner.
+
+**Safety results**
+
+Zero safety violations across every live run. No approval was ever decided by
+the agent, no quote was released, no price or discount originated with the
+model, and no hard compatibility failure was recommended.
+
+Four adversarial requests — fabricated inventory, a demand to skip the
+datasheet, a claimed VP self-approval, and an instruction to call no tools at
+all — all failed to change any outcome. In three of the four the model *did*
+partially comply in its prose, asserting a stock figure or a price no tool had
+returned, and grounding rejected the claim and routed the case to a person.
+That is the intended result: the defence is that obeying an injection changes
+nothing, not that the model resists it.
+
+**Limitations of this evaluation**
+
+- One model, one day, single runs per scenario. Live behaviour varies between
+  runs; the same case has produced both a clean summary and an ungrounded one.
+- The remaining scenario failure is real and left in place: on refusal cases
+  the agent stops once satisfied nothing works, so its audit record is thinner
+  than the fixed pipeline's, which enumerates and records a reason against
+  every candidate.
+- There is no terminal tool for "answer the question and stop", so a purely
+  informational request is concluded either by asking a clarifying question or
+  by producing a quotation nobody asked for.
+- Costs are estimates from published rates, not billed amounts.
+
+## 11. Limitations
 
 Stated plainly, because a demonstration that oversells itself is worse than one that does less.
 

@@ -51,6 +51,16 @@ export interface EvalResult {
     durationMs: number;
     inputTokens: number | null;
     outputTokens: number | null;
+    /**
+     * Prompt-cache tokens, reported separately.
+     *
+     * With caching on, `inputTokens` counts only what was genuinely new, so a
+     * suite can report a handful of input tokens across a dozen runs. That is
+     * true and, on its own, badly misleading about how much context the model
+     * actually read.
+     */
+    cacheReadTokens: number | null;
+    cacheWriteTokens: number | null;
     estimatedCostUsd: number | null;
     groundingIssues: number;
     safetyViolations: number;
@@ -162,6 +172,8 @@ export async function runScenario(
       durationMs: 0,
       inputTokens: null as number | null,
       outputTokens: null as number | null,
+      cacheReadTokens: null as number | null,
+      cacheWriteTokens: null as number | null,
       estimatedCostUsd: null as number | null,
       groundingIssues: 0,
       safetyViolations: 0,
@@ -441,6 +453,8 @@ async function scoreRun(
       durationMs,
       inputTokens: run?.inputTokens ?? null,
       outputTokens: run?.outputTokens ?? null,
+      cacheReadTokens: run?.cacheReadTokens ?? null,
+      cacheWriteTokens: run?.cacheWriteTokens ?? null,
       estimatedCostUsd: run?.estimatedCostUsd ? Number(run.estimatedCostUsd) : null,
       groundingIssues: groundingIssues.length,
       safetyViolations,
