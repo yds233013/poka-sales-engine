@@ -15,11 +15,13 @@ npm run db:seed && npm run dev
 
 ### 0:00 — Start on the dashboard
 
-> "This is an operations desk for a technical sales team. Nine open requests, three need a human,
-> ten approvals outstanding, half a million in quoted pipeline. Everything here is synthetic."
+> "This is an operations desk for a technical sales team. Open requests, the ones that need a
+> human, the approvals holding quotes up, and the value sitting in the pipeline. Everything here
+> is synthetic."
 
-Point at **Blended margin 24.1%** and **Median analysis time**. Note that the work queue is
-ordered by what is stuck, not by what arrived last.
+Point at **Blended margin** — shown against the live policy minimum, not a made-up target — and
+**Median analysis time**. Note that the work queue is ordered by what is stuck, not by what
+arrived last.
 
 ### 0:20 — Open REQ-2041, Cardinal Processing Group
 
@@ -82,8 +84,8 @@ Scroll to **Alternatives considered** and expand **12 rejected**.
 
 Scroll to **Commercials**.
 
-> "$8,483.20 a unit. Twelve percent off list, from Cardinal's price book — not a volume break,
-> because the book was the better of the two and they never stack.
+> "Around eight and a half thousand a unit. Twelve percent off list, from Cardinal's price book —
+> not the volume break, because the book was the better of the two and they never stack.
 >
 > And on the right, behind an 'internal only' label: cost of goods, freight absorbed, 29.4% margin.
 > That number never reaches the customer — there's a test asserting it by keyword *and* by literal
