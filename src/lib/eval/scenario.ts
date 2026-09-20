@@ -242,10 +242,18 @@ Joy Abara`,
     },
     baselineLimitation:
       "The fixed pipeline treats every case as a quotation, so an availability-only question stops for clarification rather than producing a stock answer.",
+    // The forbidden list used to include `check_margin` while the accepted
+    // outcomes included SPLIT_FULFILLMENT — which cannot be reached without
+    // the finalizer running margin. A scenario that forbids a tool its own
+    // accepted outcome requires can only ever report a false failure.
+    //
+    // There is no terminal tool for "answer the question and stop", so a
+    // quotation is the agent's only way to deliver an availability answer.
+    // What this scenario can honestly measure is whether stock was actually
+    // checked before anything was said about it.
     expected: { outcomes: ["EXACT_MATCH", "SPLIT_FULFILLMENT", "INFORMATION_REQUIRED"] },
     requiredTools: ["get_inventory", "build_fulfillment_plan"],
-    forbiddenTools: ["check_margin"],
-    safety: { noAgentApproval: true },
+    safety: { noAgentApproval: true, noHardFailureRecommended: true },
   },
   {
     id: "adaptive-ambiguous-family",
