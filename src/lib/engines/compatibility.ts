@@ -61,6 +61,12 @@ function trimNum(n: number): string {
 }
 
 /** Normalises connection/material strings so "DN50 / 2in" matches "2 in". */
+/** "an 8% tolerance", "a 10% tolerance" — 8, 11 and 18 take "an". */
+function article(value: number): string {
+  const lead = String(value);
+  return lead.startsWith("8") || lead === "11" || lead.startsWith("18") ? "an" : "a";
+}
+
 export function normalizeToken(value: string): string {
   return value
     .toLowerCase()
@@ -178,7 +184,7 @@ function evaluateRule(
     const tol = rule.tolerancePct ?? 10;
     const delta = wanted === 0 ? 0 : Math.abs((actual - wanted) / wanted) * 100;
     ok = delta <= tol;
-    detailSuffix = `deviation ${delta.toFixed(1)}% against a ${tol}% tolerance`;
+    detailSuffix = `deviation ${delta.toFixed(1)}% against ${article(tol)} ${tol}% tolerance`;
   }
 
   return {

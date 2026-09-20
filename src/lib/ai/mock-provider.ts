@@ -95,9 +95,15 @@ export class MockProvider implements AIProvider {
       );
     }
     rationaleParts.push(...input.facts);
-    const rejections = summariseRejections(input.rejected, 3);
-    if (rejections) {
-      rationaleParts.push(`Alternatives considered and set aside: ${rejections}`);
+    // Deliberately only a count here. The alternatives panel sits directly
+    // below this paragraph and lists the closest rejections with the exact
+    // figures they failed on; repeating them in prose made the first thing a
+    // reader sees a wall of text that said nothing the page did not already
+    // show better.
+    if (input.rejected.length > 0) {
+      rationaleParts.push(
+        `${input.rejected.length} other ${input.rejected.length === 1 ? "candidate was" : "candidates were"} evaluated and ruled out — each is listed below with the check it failed.`,
+      );
     }
     if (input.warnings.length > 0) {
       rationaleParts.push(`Open points for review: ${sentenceList(input.warnings)}.`);
