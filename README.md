@@ -49,7 +49,35 @@ pastes the email in; the system produces a structured recommendation with:
 The design principle throughout: **the language model reads and writes prose; it never decides
 an outcome.**
 
-## 3. Architecture
+## 3. Two execution modes
+
+The workflow above can be orchestrated two ways. They share the catalog, the
+documents, the inventory, the engines, the approval policy and the audit model.
+Only the orchestration differs.
+
+| | Deterministic | Adaptive agent |
+| --- | --- | --- |
+| Tool order | Fixed pipeline, same every case | Chosen by the model, per case |
+| Requires credentials | No — runs fully offline | Yes (`ANTHROPIC_API_KEY`) |
+| Tool layer | Direct calls | Real MCP server over JSON-RPC |
+| Decides business truth | The engines | **The engines** |
+| Availability | Always | Marked unavailable when unconfigured |
+
+Both converge on one function, `finalizeCase`. The deterministic pipeline
+supplies candidates from curated replacement links plus a catalog screen; the
+agent supplies whatever it decided to investigate. From there the code is
+identical — every candidate is re-validated, re-priced, re-planned and
+re-tested against approval policy.
+
+So the agent can influence **which products get looked at**, and nothing else.
+Running REQ-2041 adaptively produces the same quote as running it
+deterministically: PX-440 × 12, $102,808.88, 30.38% margin, three approvals.
+That equality is asserted in the test suite, not asserted here.
+
+See [`docs/AGENT_ARCHITECTURE.md`](docs/AGENT_ARCHITECTURE.md),
+[`docs/MCP.md`](docs/MCP.md) and [`docs/EVALS.md`](docs/EVALS.md).
+
+## 4. Architecture
 
 ```
 inbound request
@@ -92,8 +120,11 @@ executed trace, not a narration written afterwards. Chain-of-thought is never ca
 | Path | What lives there |
 | --- | --- |
 | `src/lib/engines/` | Pure deterministic logic — compatibility, substitution, inventory, pricing, freight, margin, approval. No Prisma import, fully unit-testable. |
-| `src/lib/agent/` | Tool definitions, the tool bus that records every call, and the orchestrator. |
-| `src/lib/ai/` | Provider abstraction, the deterministic extractor, the mock provider, the optional Claude provider. |
+| `src/lib/agent/` | Tool definitions, the tool bus that records every call, the fixed pipeline, and `finalizeCase` — the one path to business truth. |
+| `src/lib/agent/adaptive/` | The model-directed loop: investigation state, guardrails, structured outcome, grounding checks. |
+| `src/lib/mcp/` | The MCP server, client and tool contracts. |
+| `src/lib/eval/` | Scenario format and the harness that scores both modes against the same truth. |
+| `src/lib/ai/` | Provider abstraction, the deterministic extractor, the mock provider, the optional Claude provider, mode availability. |
 | `src/lib/workflow.ts` | Human transitions — approval decisions, quote release, response edits, case completion. Re-derives its own preconditions. |
 | `prisma/seed/` | The synthetic world: catalog generator, rules, documentation, commercial data, accounts, scenarios. |
 | `tests/unit/` | 160 tests over the engines, with no database. |
@@ -248,11 +279,13 @@ npm run db:setup && npm run dev
 `npm run db:setup` takes about fifteen seconds. Most of that is the agent actually running over
 the seeded scenarios.
 
-### AI provider
+### AI provider and execution modes
 
 The application is **fully functional with no API key** and makes no network calls in that mode.
 `AI_PROVIDER=mock` (the default) uses a deterministic rule-based extractor and composes every
-rationale and customer letter from values the engines computed.
+rationale and customer letter from values the engines computed. Adaptive mode is shown as
+*unavailable* with the reason, and the deterministic workflow remains available everywhere —
+nothing ever presents the fixed pipeline as though it were a model-driven agent.
 
 To use a real model for the language-shaped steps only:
 
@@ -261,6 +294,10 @@ AI_PROVIDER=anthropic
 ANTHROPIC_API_KEY=sk-ant-...
 ANTHROPIC_MODEL=claude-sonnet-5
 ```
+
+With a key present, **adaptive mode** also becomes selectable in Agent Lab and on a case. The
+model then directs the investigation over MCP, subject to turn, tool, time and loop budgets, and
+its conclusion is handed to the same deterministic finalizer.
 
 Even then, deterministic extraction runs first and wins any conflict; the model may only fill
 genuine gaps. Its output is schema-validated, its citations are checked against the actual message
@@ -277,8 +314,9 @@ No pricing, inventory, compatibility or approval decision passes through it.
 | `npm run db:setup` | Generate client, push schema, seed and run the agent |
 | `npm run db:seed` | Re-seed only (resets the demo to its starting state) |
 | `npm run db:studio` | Prisma Studio |
-| `npm run test:unit` | 160 engine tests, no database, ~2s |
-| `npm run test:integration` | 53 tests against a throwaway seeded database |
+| `npm run test:unit` | 206 engine, contract, guardrail and grounding tests; no database |
+| `npm run test:integration` | 99 tests against a throwaway seeded database |
+| `npm run eval` | Evaluation suite, both modes, printed table |
 | `npm test` | Both suites |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint |
@@ -336,10 +374,16 @@ Stated plainly, because a demonstration that oversells itself is worse than one 
   The gate itself is server-side and genuinely refuses; what is missing is proof of who is asking.
 - **One quote revision per case.** Re-running replaces the analysis rather than versioning it;
   a production system would keep the history.
-- **The agent pipeline is fixed, not adaptive.** That is a deliberate trade — a deterministic
-  tool order makes two cases comparable in the audit trail and removes any path by which the
-  compatibility or approval step could be skipped. A genuinely novel request shape would need a
-  planner.
+- **Adaptive mode has not been run against a live model in this build.** Every adaptive path is
+  exercised end to end with a scripted model client — the MCP round trips, guardrails, grounding
+  and finalization are all real — but no run against the actual Claude API is recorded here,
+  because no credentials were configured. The eval harness reports `NOT_RUN` rather than
+  inventing numbers.
+- **The eval harness scores outcomes, not prose quality.** It checks that a recommendation is
+  correct, safe and grounded. It does not judge whether the customer letter reads well.
+- **One MCP server, one case.** The server is bound to a single case at construction. A
+  multi-case or multi-tenant deployment would need the case id to become an authenticated
+  parameter rather than a closure.
 
 ---
 

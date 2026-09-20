@@ -12,6 +12,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { runSalesRequest } from "@/lib/agent/orchestrator";
+import { runAdaptiveRequest, AdaptiveUnavailableError } from "@/lib/agent/adaptive";
+import { isAdaptiveAvailable } from "@/lib/ai/capability";
 import {
   completeCase,
   decideApproval,
@@ -41,9 +43,32 @@ function revalidateCase(requestId: string) {
 
 const idSchema = z.string().min(1);
 
-export async function runAnalysisAction(requestId: string): Promise<ActionResult> {
+export async function runAnalysisAction(
+  requestId: string,
+  mode: "DETERMINISTIC" | "ADAPTIVE_AGENT" = "DETERMINISTIC",
+): Promise<ActionResult> {
   try {
     idSchema.parse(requestId);
+
+    if (mode === "ADAPTIVE_AGENT") {
+      if (!isAdaptiveAvailable()) {
+        return {
+          ok: false,
+          message:
+            "Adaptive mode needs a configured model provider. Run the deterministic workflow instead.",
+        };
+      }
+      const adaptive = await runAdaptiveRequest(prisma, requestId);
+      revalidateCase(requestId);
+      return {
+        ok: true,
+        message:
+          adaptive.groundingIssues.length > 0
+            ? `Adaptive investigation complete, but ${adaptive.groundingIssues.length} unsupported claim(s) were rejected — the case is routed for review.`
+            : `Adaptive investigation complete — ${adaptive.termination.replace(/_/g, " ").toLowerCase()} after ${adaptive.toolCallCount} tool calls.`,
+      };
+    }
+
     const outcome = await runSalesRequest(prisma, requestId);
     revalidateCase(requestId);
     return {
@@ -55,6 +80,7 @@ export async function runAnalysisAction(requestId: string): Promise<ActionResult
     };
   } catch (error) {
     revalidateCase(requestId);
+    if (error instanceof AdaptiveUnavailableError) return { ok: false, message: error.message };
     return fail(error);
   }
 }

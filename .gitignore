@@ -44,5 +44,6 @@ next-env.d.ts
 # Prisma generated client — rebuilt by `npm run db:generate`
 /src/generated
 
-# Local editor/agent launch config
-/.claude
+# Local editor/agent launch config — but the project's own skills are committed
+/.claude/*
+!/.claude/skills

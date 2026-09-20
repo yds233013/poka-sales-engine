@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getCase, getPolicyThresholds, getUsers } from "@/lib/queries";
+import { executionModes } from "@/lib/ai/capability";
 import { PageBody } from "@/components/ui/page";
 import {
   Panel,
@@ -43,6 +44,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
   ]);
   if (!request) notFound();
 
+  const adaptiveMode = executionModes().find((m) => m.mode === "ADAPTIVE_AGENT")!;
   const recommendation = request.recommendations[0] ?? null;
   const quote = request.quotes[0] ?? null;
   const run = request.runs[0] ?? null;
@@ -160,6 +162,8 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
               status={request.status}
               hasQuote={Boolean(quote)}
               blockingApprovals={blockingApprovals.length}
+              adaptiveAvailable={adaptiveMode.available}
+              adaptiveUnavailableReason={adaptiveMode.unavailableReason}
             />
           </div>
         </div>

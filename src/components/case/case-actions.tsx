@@ -17,6 +17,8 @@ export function CaseActions({
   blockingApprovals,
   actingUserId,
   actingUserName,
+  adaptiveAvailable,
+  adaptiveUnavailableReason,
 }: {
   requestId: string;
   status: string;
@@ -24,6 +26,8 @@ export function CaseActions({
   blockingApprovals: number;
   actingUserId: string;
   actingUserName: string;
+  adaptiveAvailable: boolean;
+  adaptiveUnavailableReason: string | null;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -39,17 +43,41 @@ export function CaseActions({
 
   const canRelease = hasQuote && blockingApprovals === 0 && ["APPROVED", "READY_FOR_APPROVAL"].includes(status);
   const canComplete = status === "RESPONSE_READY";
+  const runLabel = status === "NEW" ? "Run analysis" : "Re-run analysis";
 
   return (
     <div className="flex flex-col items-end gap-1.5">
       <div className="flex items-center gap-2">
         <Button
           variant="secondary"
-          onClick={() => run(() => runAnalysisAction(requestId))}
+          onClick={() => run(() => runAnalysisAction(requestId, "DETERMINISTIC"))}
           disabled={pending}
         >
-          {pending ? "Working…" : status === "NEW" ? "Run analysis" : "Re-run analysis"}
+          {pending ? "Working…" : runLabel}
         </Button>
+
+        {/*
+          Adaptive is offered only when it genuinely exists. When it does not,
+          the reason is shown rather than the button being silently absent —
+          and the deterministic path is never labelled as an agent.
+        */}
+        {adaptiveAvailable ? (
+          <Button
+            variant="secondary"
+            onClick={() => run(() => runAnalysisAction(requestId, "ADAPTIVE_AGENT"))}
+            disabled={pending}
+            title="The model chooses which tools to call. Compatibility, stock, pricing and approvals stay deterministic."
+          >
+            {pending ? "Working…" : "Run adaptive agent"}
+          </Button>
+        ) : (
+          <span
+            className="cursor-not-allowed rounded bg-ink-100 px-3 py-1.5 text-[12px] font-medium text-ink-400"
+            title={adaptiveUnavailableReason ?? "Adaptive mode is not configured."}
+          >
+            Adaptive unavailable
+          </span>
+        )}
 
         {canRelease ? (
           <Button

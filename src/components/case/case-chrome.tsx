@@ -9,11 +9,15 @@ export function CaseChrome({
   status,
   hasQuote,
   blockingApprovals,
+  adaptiveAvailable,
+  adaptiveUnavailableReason,
 }: {
   requestId: string;
   status: string;
   hasQuote: boolean;
   blockingApprovals: number;
+  adaptiveAvailable: boolean;
+  adaptiveUnavailableReason: string | null;
 }) {
   const { user } = useActingUser();
   return (
@@ -24,6 +28,8 @@ export function CaseChrome({
       blockingApprovals={blockingApprovals}
       actingUserId={user.id}
       actingUserName={user.name}
+      adaptiveAvailable={adaptiveAvailable}
+      adaptiveUnavailableReason={adaptiveUnavailableReason}
     />
   );
 }
