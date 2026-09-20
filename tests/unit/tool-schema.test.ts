@@ -28,7 +28,7 @@ describe("tool schemas exposed to the model", () => {
     const props = byName.request_clarification.input_schema.properties as Record<string, Record<string, unknown>>;
     expect((props.questions.items as Record<string, unknown>).maxLength).toBe(500);
     expect(props.reason.minLength).toBe(20);
-    expect(props.reason.maxLength).toBe(1200);
+    expect(props.reason.maxLength).toBe(2000);
   });
 
   it("publishes numeric bounds and integrality", () => {

@@ -17,6 +17,14 @@
  * that could pass its own requirements could make any product pass, which
  * would make the whole compatibility layer decorative.
  *
+ * **Free-text limits follow the audience.** Operator-facing explanation —
+ * `rationale`, `reason` — is sized to its downstream container (2000, matching
+ * `recommendationSummary`), because rejecting a thorough explanation costs a
+ * turn and buys nothing. Customer-facing text — `questions` — stays tight,
+ * because a 500-character question is a bad question. Live runs showed the
+ * model writes past any limit it is given, so the limit has to be justified by
+ * the field rather than by what the model happens to produce.
+ *
  * **Effect is declared, not inferred.** Every tool states whether it reads,
  * computes, mutates, or mutates behind a human gate. The runtime refuses
  * anything outside the set a given run is allowed to touch.
@@ -373,8 +381,10 @@ export const TOOL_CONTRACTS = {
         .string()
         .trim()
         .min(20)
-        .max(1200)
-        .describe("Why these candidates, in plain operational English. No internal cost or margin figures."),
+        .max(2000)
+        .describe(
+          "Why these candidates, in plain operational English. Operator-facing, so explain your reasoning in full. No internal cost or margin figures.",
+        ),
     }),
     // Deliberately narrow. Finalization happens after the investigation loop
     // ends, so this tool cannot report an outcome, a selected part, a quote
@@ -401,7 +411,7 @@ export const TOOL_CONTRACTS = {
         .string()
         .trim()
         .min(20)
-        .max(1200)
+        .max(2000)
         .describe("Why the case cannot proceed without these. Operator-facing, so state the technical reason in full."),
     }),
     output: z.object({ status: z.string(), questionCount: z.number(), note: z.string() }),
@@ -414,7 +424,7 @@ export const TOOL_CONTRACTS = {
     effect: "HUMAN_GATED_MUTATION",
     idempotent: false,
     input: z.object({
-      reason: z.string().trim().min(20).max(1200),
+      reason: z.string().trim().min(20).max(2000),
       blockingDimensions: z
         .array(z.string().trim().max(60))
         .max(8)

@@ -418,7 +418,7 @@ async function concludeRun(args: ConcludeArgs): Promise<AdaptiveOutcome> {
         status: "PENDING",
         requiredRole: "APPLICATION_ENGINEER",
         title: "Specialist review requested by the adaptive agent",
-        reason: payload.reason.slice(0, 1200),
+        reason: payload.reason.slice(0, 2000),
         proposedAction:
           "Review the investigation and decide whether this can be met from catalog product, a special, or not at all.",
         commercialImpact: "No quotation was produced; nothing has been offered to the customer.",
