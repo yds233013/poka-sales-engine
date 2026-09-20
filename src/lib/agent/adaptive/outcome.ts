@@ -103,6 +103,17 @@ export interface GroundingCatalog {
 export interface AuthoritativeVerdict {
   sku: string;
   hardFailureDimensions: string[];
+  /**
+   * Money the finalizer itself produced — the quote total, its freight, each
+   * line's extended value.
+   *
+   * The pricing tool returns a unit price and a line extended; it does not
+   * return the quote total, because freight and rounding are applied
+   * afterwards. A live run had the agent state the correct total and had it
+   * rejected as invented, which is precisely backwards: that figure is the
+   * most authoritative number in the case.
+   */
+  figures: string[];
 }
 
 export function checkGrounding(
@@ -228,17 +239,22 @@ export function checkGrounding(
       // Every figure, not merely one of them. A summary that pairs a real unit
       // price with an invented total is the dangerous case, and an
       // any-one-matches rule would wave it straight through.
-      const known = new Set(
-        state.pricesCalculated.flatMap((p) => [p.unitPrice, p.listPrice, p.extended, ...p.considered]),
-      );
-      known.delete("");
-      const normalise = (value: string) => value.replace(/\s/g, "");
-      const knownNormalised = new Set([...known].map(normalise));
+      //
+      // Comparison is numeric rather than textual. The engines format money to
+      // two decimals ("$6,364.00"); people, and models, write "$6,364". Those
+      // are the same number, and treating them as different claims rejects
+      // correct statements.
+      const known = [
+        ...state.pricesCalculated.flatMap((p) => [p.unitPrice, p.listPrice, p.extended, ...p.considered]),
+        ...(authoritative?.figures ?? []),
+      ];
+      const knownValues = new Set(known.map(moneyValue).filter((v): v is number => v !== null));
       for (const amount of new Set(amounts)) {
-        if (!knownNormalised.has(normalise(amount))) {
+        const value = moneyValue(amount);
+        if (value === null || !knownValues.has(value)) {
           issues.push({
             kind: "UNGROUNDED_PRICE",
-            detail: `${amount} does not match any figure the pricing engine returned for this case.`,
+            detail: `${amount} does not match any figure the engines produced for this case.`,
           });
         }
       }
@@ -269,6 +285,14 @@ export function checkGrounding(
   }
 
   return issues;
+}
+
+/** Parse a formatted money string to a number, so "$6,364" equals "$6,364.00". */
+function moneyValue(text: string): number | null {
+  const cleaned = text.replace(/[$,\s]/g, "");
+  if (cleaned === "") return null;
+  const value = Number(cleaned);
+  return Number.isFinite(value) ? Math.round(value * 100) / 100 : null;
 }
 
 /**

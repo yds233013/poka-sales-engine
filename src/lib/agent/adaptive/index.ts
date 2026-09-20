@@ -564,12 +564,28 @@ async function concludeRun(args: ConcludeArgs): Promise<AdaptiveOutcome> {
   // The finalizer's own checks on the winning candidate, which supersede the
   // agent's earlier snapshot — it may have fitted an adapter the agent had not
   // seen when it ran its compatibility check.
+  const quote = finished.quoteId
+    ? await prisma.quote.findUnique({ where: { id: finished.quoteId }, include: { items: true } })
+    : null;
+
   const authoritative: AuthoritativeVerdict | null = winner
     ? {
         sku: winner.product.sku,
         hardFailureDimensions: winner.checks
           .filter((c) => c.result === "FAIL" && c.severity === "HARD")
           .map((c) => c.dimension),
+        // The finalizer's own money. The pricing tool never returns the quote
+        // total — freight and rounding land after it — so without these the
+        // most authoritative figure in the case reads as invented.
+        figures: quote
+          ? [
+              quote.total.toString(),
+              quote.subtotal.toString(),
+              quote.freightCost.toString(),
+              quote.discountTotal.toString(),
+              ...quote.items.flatMap((i) => [i.unitPrice.toString(), i.extended.toString()]),
+            ]
+          : [],
       }
     : null;
 

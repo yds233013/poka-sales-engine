@@ -280,6 +280,7 @@ describe("grounding checks", () => {
     const issues = checkGrounding(outcome(), state, CATALOG, {
       sku: "PX-440",
       hardFailureDimensions: [],
+      figures: [],
     });
     expect(issues.filter((i) => i.kind === "UNCHECKED_COMPATIBILITY")).toHaveLength(0);
   });
@@ -288,8 +289,50 @@ describe("grounding checks", () => {
     const issues = checkGrounding(outcome(), investigated(), CATALOG, {
       sku: "PX-440",
       hardFailureDimensions: ["temperature"],
+      figures: [],
     });
     expect(issues.some((i) => i.kind === "UNCHECKED_COMPATIBILITY" && /temperature/.test(i.detail))).toBe(true);
+  });
+
+  it("treats $6,364 and $6,364.00 as the same figure", () => {
+    // Live failure: the engines format money to two decimals, the model wrote
+    // the round form, and a string comparison called a correct price invented.
+    let state = emptyState("case-1");
+    state = applyToolResult(state, "check_compatibility", {
+      sku: "PX-440", safety: "AUTO_SAFE", passCount: 6, checks: [], evidence: [],
+    });
+    state = applyToolResult(state, "calculate_price", {
+      sku: "PX-440", unitPrice: "$6,364.00", listPrice: "", extended: "", considered: [], priceSource: "PRICE_BOOK",
+    });
+    const issues = checkGrounding(
+      outcome({ recommendationSummary: "Unit price is $6,364 on their price book." }),
+      state,
+      CATALOG,
+    );
+    expect(issues.filter((i) => i.kind === "UNGROUNDED_PRICE")).toHaveLength(0);
+  });
+
+  it("accepts the quote total, which the pricing tool never returns", () => {
+    // Freight and rounding land after calculate_price, so the total exists
+    // only on the finalizer's quote — the most authoritative number in the
+    // case, and one the old check rejected as invented.
+    const issues = checkGrounding(
+      outcome({ recommendationSummary: "The order comes to $154,303.72 delivered." }),
+      investigated(),
+      CATALOG,
+      { sku: "PX-440", hardFailureDimensions: [], figures: ["154303.72"] },
+    );
+    expect(issues.filter((i) => i.kind === "UNGROUNDED_PRICE")).toHaveLength(0);
+  });
+
+  it("still rejects a total no engine produced", () => {
+    const issues = checkGrounding(
+      outcome({ recommendationSummary: "The order comes to $999,999.00 delivered." }),
+      investigated(),
+      CATALOG,
+      { sku: "PX-440", hardFailureDimensions: [], figures: ["154303.72"] },
+    );
+    expect(issues.some((i) => i.kind === "UNGROUNDED_PRICE")).toBe(true);
   });
 
   it("flags internal commercial language", () => {
