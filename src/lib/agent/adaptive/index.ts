@@ -43,7 +43,13 @@ import {
   type ModelClient,
   type AdaptiveRunOptions,
 } from "./runtime";
-import { agentOutcomeSchema, checkGrounding, type AgentOutcome, type GroundingCatalog } from "./outcome";
+import {
+  agentOutcomeSchema,
+  checkGrounding,
+  type AgentOutcome,
+  type AuthoritativeVerdict,
+  type GroundingCatalog,
+} from "./outcome";
 import { narrateState, type TerminationStatus } from "./state";
 
 const PRODUCT_INCLUDE = { category: true, specs: true } as const;
@@ -117,9 +123,10 @@ export async function runAdaptiveRequest(
 
   try {
     // ── 1. Deterministic extraction — the grounding anchor ─────────────────
-    const [knownSkuRows, knownDocRows, sites] = await Promise.all([
+    const [knownSkuRows, knownDocRows, knownCaseRows, sites] = await Promise.all([
       prisma.product.findMany({ select: { sku: true } }),
       prisma.technicalDocument.findMany({ select: { docNumber: true } }),
+      prisma.salesRequest.findMany({ select: { reference: true } }),
       prisma.customerSite.findMany({ select: { id: true, name: true, aliases: true, city: true } }),
     ]);
 
@@ -176,6 +183,7 @@ export async function runAdaptiveRequest(
     const catalog: GroundingCatalog = {
       skus: new Set(knownSkuRows.map((r) => r.sku)),
       documents: new Set(knownDocRows.map((r) => r.docNumber)),
+      caseReferences: new Set(knownCaseRows.map((r) => r.reference.toUpperCase())),
     };
     const quantityReq = requirements.find((r) => r.key === "quantity");
     const quantity = quantityReq?.kind === "EXPLICIT" ? Number(quantityReq.numValue) : null;
@@ -523,7 +531,9 @@ async function concludeRun(args: ConcludeArgs): Promise<AdaptiveOutcome> {
   const recommendation = finished.recommendationId
     ? await prisma.recommendation.findUnique({
         where: { id: finished.recommendationId },
-        include: { candidates: { include: { product: true }, orderBy: { rank: "asc" } } },
+        include: {
+          candidates: { include: { product: true, checks: true }, orderBy: { rank: "asc" } },
+        },
       })
     : null;
   const winner = recommendation?.candidates.find((c) => c.verdict === "RECOMMENDED") ?? null;
@@ -546,10 +556,23 @@ async function concludeRun(args: ConcludeArgs): Promise<AdaptiveOutcome> {
         .map((c) => ({ sku: c.product.sku, verdict: c.verdict, reason: c.reason.slice(0, 400) })) ?? [],
   });
 
+  // The finalizer's own checks on the winning candidate, which supersede the
+  // agent's earlier snapshot — it may have fitted an adapter the agent had not
+  // seen when it ran its compatibility check.
+  const authoritative: AuthoritativeVerdict | null = winner
+    ? {
+        sku: winner.product.sku,
+        hardFailureDimensions: winner.checks
+          .filter((c) => c.result === "FAIL" && c.severity === "HARD")
+          .map((c) => c.dimension),
+      }
+    : null;
+
   const issues = validate(
     { ...outcome, recommendationSummary: payload.rationale },
     result,
     args.catalog,
+    authoritative,
   );
   await persistMeta(issues.length > 0 ? "NEEDS_INTERNAL_REVIEW" : "READY_FOR_APPROVAL", issues, outcome);
 
@@ -648,8 +671,13 @@ function buildOutcome(
   };
 }
 
-function validate(outcome: AgentOutcome, result: AdaptiveResult, catalog: GroundingCatalog): string[] {
-  return checkGrounding(outcome, result.state, catalog).map((i) => `${i.kind}: ${i.detail}`);
+function validate(
+  outcome: AgentOutcome,
+  result: AdaptiveResult,
+  catalog: GroundingCatalog,
+  authoritative: AuthoritativeVerdict | null = null,
+): string[] {
+  return checkGrounding(outcome, result.state, catalog, authoritative).map((i) => `${i.kind}: ${i.detail}`);
 }
 
 /**

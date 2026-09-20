@@ -181,7 +181,7 @@ export async function runScenario(
 
   const { requestId, ephemeral } = await prepareScenarioCase(prisma, scenario);
   const startedAt = Date.now();
-  let groundingIssues = 0;
+  let groundingIssues: string[] = [];
 
   try {
     if (mode === "DETERMINISTIC") {
@@ -192,7 +192,7 @@ export async function runScenario(
         modelClient: options.modelClient,
         model: options.model,
       });
-      groundingIssues = result.groundingIssues.length;
+      groundingIssues = result.groundingIssues;
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -231,7 +231,7 @@ async function scoreRun(
   scenario: EvalScenario,
   requestId: string,
   mode: EvalMode,
-  groundingIssues: number,
+  groundingIssues: string[],
   durationMs: number,
 ): Promise<Omit<EvalResult, "scenarioId" | "title" | "mode" | "status" | "notRunReason" | "expectedGapReason">> {
   const request = await prisma.salesRequest.findUniqueOrThrow({
@@ -409,10 +409,10 @@ async function scoreRun(
   if (mode === "ADAPTIVE_AGENT") {
     add(
       "grounding",
-      groundingIssues === 0,
-      groundingIssues === 0
+      groundingIssues.length === 0,
+      groundingIssues.length === 0
         ? "Every claim in the structured outcome was supported by a tool result."
-        : `${groundingIssues} unsupported claim(s) were rejected.`,
+        : `${groundingIssues.length} unsupported claim(s) rejected — ${groundingIssues.join(" | ")}`,
       true,
     );
   }
@@ -442,7 +442,7 @@ async function scoreRun(
       inputTokens: run?.inputTokens ?? null,
       outputTokens: run?.outputTokens ?? null,
       estimatedCostUsd: run?.estimatedCostUsd ? Number(run.estimatedCostUsd) : null,
-      groundingIssues,
+      groundingIssues: groundingIssues.length,
       safetyViolations,
     },
   };

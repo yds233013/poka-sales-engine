@@ -5,6 +5,7 @@ import { applyToolResult, canDraftQuote, emptyState, narrateState } from "@/lib/
 const CATALOG = {
   skus: new Set(["PX-440", "AX-220", "MX-160"]),
   documents: new Set(["DS-1020", "DS-9999", "RG-2207"]),
+  caseReferences: new Set(["REQ-2041", "REQ-2036"]),
 };
 
 function outcome(overrides: Partial<Parameters<typeof checkGrounding>[0]> = {}) {
@@ -217,6 +218,78 @@ describe("grounding checks", () => {
       CATALOG,
     );
     expect(issues.some((i) => i.kind === "INTERNAL_LANGUAGE_LEAK")).toBe(true);
+  });
+
+  it("accepts a case reference the account's history actually contains", () => {
+    // Live failure: an agent that consulted get_customer_history and wrote
+    // "you last ordered these on REQ-2036" had that reported as a fabricated
+    // part number, because a case reference is shaped exactly like one.
+    const issues = checkGrounding(
+      outcome({ recommendationSummary: "Same duty as REQ-2036, which this account ordered previously." }),
+      investigated(),
+      CATALOG,
+    );
+    expect(issues).toHaveLength(0);
+  });
+
+  it("still rejects a case reference that does not exist", () => {
+    const issues = checkGrounding(
+      outcome({ recommendationSummary: "As agreed on REQ-9999 last quarter." }),
+      investigated(),
+      CATALOG,
+    );
+    expect(issues.some((i) => i.kind === "UNKNOWN_SKU" && /REQ-9999/.test(i.detail))).toBe(true);
+  });
+
+  it("lets the agent name a part it established does not exist", () => {
+    // Live failure: answering "PX-450 is not one of ours" requires naming
+    // PX-450, and the check treated that as an invented part number.
+    let state = investigated();
+    state = applyToolResult(state, "resolve_sku", { found: false, requested: "PX-450", sku: null });
+    const issues = checkGrounding(
+      outcome({ recommendationSummary: "PX-450 is not a part we list; the nearest equivalent is the PX-440." }),
+      state,
+      CATALOG,
+    );
+    expect(issues).toHaveLength(0);
+  });
+
+  it("still rejects a part number no tool ever looked up", () => {
+    const issues = checkGrounding(
+      outcome({ recommendationSummary: "The PX-999 would also suit this duty." }),
+      investigated(),
+      CATALOG,
+    );
+    expect(issues.some((i) => i.kind === "UNKNOWN_SKU" && /PX-999/.test(i.detail))).toBe(true);
+  });
+
+  it("lets the finalizer's verdict override a stale pre-adapter reading", () => {
+    // Live failure: the agent saw RG-120 fail on `connection`, the finalizer
+    // fitted the adapter that resolves it and recommended RG-120 correctly,
+    // and grounding rejected the run by grading the earlier snapshot.
+    let state = investigated();
+    state = applyToolResult(state, "check_compatibility", {
+      sku: "PX-440",
+      safety: "BLOCKED",
+      passCount: 4,
+      checks: [
+        { dimension: "connection", result: "FAIL", severity: "HARD", required: "DN80", actual: "DN50", label: "Connection" },
+      ],
+      evidence: [],
+    });
+    const issues = checkGrounding(outcome(), state, CATALOG, {
+      sku: "PX-440",
+      hardFailureDimensions: [],
+    });
+    expect(issues.filter((i) => i.kind === "UNCHECKED_COMPATIBILITY")).toHaveLength(0);
+  });
+
+  it("still rejects a selection the finalizer itself hard-failed", () => {
+    const issues = checkGrounding(outcome(), investigated(), CATALOG, {
+      sku: "PX-440",
+      hardFailureDimensions: ["temperature"],
+    });
+    expect(issues.some((i) => i.kind === "UNCHECKED_COMPATIBILITY" && /temperature/.test(i.detail))).toBe(true);
   });
 
   it("flags internal commercial language", () => {

@@ -244,9 +244,11 @@ export const HANDLERS: HandlerMap = {
   },
 
   async resolve_sku(ctx, input) {
+    const requested = String(input.sku).trim().toUpperCase();
     const resolved = await resolveSku(ctx.bus, { rawSku: String(input.sku) });
     return {
       found: resolved.found,
+      requested,
       sku: resolved.sku,
       name: resolved.name,
       lifecycle: resolved.lifecycle,

@@ -137,7 +137,15 @@ export function applyToolResult(
     }
     case "resolve_sku": {
       const sku = read<string | null>("sku");
-      if (read<boolean>("found") && sku) next.resolvedSkus = unique([...next.resolvedSkus, sku]);
+      const requested = read<string>("requested");
+      if (read<boolean>("found") && sku) {
+        next.resolvedSkus = unique([...next.resolvedSkus, sku]);
+      } else if (requested) {
+        // A part number the catalog does not have is still a fact the agent
+        // established with a tool, and it has to be able to say so: "PX-450
+        // is not one of ours" is the whole answer to some requests.
+        next.unresolvedSkus = unique([...next.unresolvedSkus, requested.toUpperCase()]);
+      }
       break;
     }
     case "search_catalog": {

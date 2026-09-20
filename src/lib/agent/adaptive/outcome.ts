@@ -74,12 +74,42 @@ export interface GroundingCatalog {
    * fabricated SKU — which would fail the happy path rather than protect it.
    */
   documents: Set<string>;
+  /**
+   * Every case reference on file, e.g. "REQ-2036".
+   *
+   * Live runs surfaced this: an agent that consults `get_customer_history` and
+   * then explains "you last ordered these on REQ-2036" was having a correct,
+   * tool-sourced citation reported as a fabricated part number, because the
+   * reference is shaped exactly like one. A reference that is *not* on file is
+   * still caught.
+   */
+  caseReferences: Set<string>;
+}
+
+/**
+ * The finalizer's own verdict on the selected product, when there is one.
+ *
+ * The deterministic finalizer is authoritative for compatibility, and it knows
+ * things the agent's snapshot does not — most importantly whether an adapter
+ * resolved a connection mismatch. A live run exposed the gap: the agent saw
+ * RG-120 fail on `connection`, the finalizer fitted adapter FA-4050 and
+ * recommended it correctly, and grounding rejected the run by comparing the
+ * pre-adapter observation against the post-adapter decision.
+ *
+ * So where the finalizer has ruled, its ruling wins. The agent's snapshot is
+ * still used to catch a product that was never put through the engine at all,
+ * which is a genuine process failure rather than a stale reading.
+ */
+export interface AuthoritativeVerdict {
+  sku: string;
+  hardFailureDimensions: string[];
 }
 
 export function checkGrounding(
   outcome: AgentOutcome,
   state: InvestigationState,
   catalog: GroundingCatalog,
+  authoritative: AuthoritativeVerdict | null = null,
 ): GroundingIssue[] {
   const issues: GroundingIssue[] = [];
   // `missingInformation` is included deliberately: those questions are drafted
@@ -96,11 +126,22 @@ export function checkGrounding(
   const citedTokens = new Set(
     [...prose.matchAll(/\b([A-Z]{2,3}-\d{2,4}(?:-[A-Z]{1,2})?)\b/g)].map((m) => m[1].toUpperCase()),
   );
+  // A part number the agent looked up and found missing is legitimately
+  // mentionable — establishing that something does not exist is real work, and
+  // reporting it requires naming it.
+  const establishedMissing = new Set(state.unresolvedSkus.map((s) => s.toUpperCase()));
   for (const token of citedTokens) {
-    if (catalog.skus.has(token) || catalog.documents.has(token)) continue;
+    if (
+      catalog.skus.has(token) ||
+      catalog.documents.has(token) ||
+      catalog.caseReferences.has(token) ||
+      establishedMissing.has(token)
+    ) {
+      continue;
+    }
     issues.push({
       kind: "UNKNOWN_SKU",
-      detail: `"${token}" is neither a catalog part number nor a document on file.`,
+      detail: `"${token}" is not a catalog part number, a document on file, or a case reference — and no tool established it as missing.`,
     });
   }
   // Structured fields are stricter: these are asserted to be products, so a
@@ -117,12 +158,22 @@ export function checkGrounding(
   if (outcome.resolvedProduct) {
     const sku = outcome.resolvedProduct.toUpperCase();
     const finding = state.compatibility.find((c) => c.sku === sku);
-    if (!finding) {
+    const ruled = authoritative && authoritative.sku.toUpperCase() === sku ? authoritative : null;
+
+    if (!finding && !ruled) {
       issues.push({
         kind: "UNCHECKED_COMPATIBILITY",
         detail: `${sku} is presented as the recommendation but never went through check_compatibility.`,
       });
-    } else if (finding.safety === "BLOCKED") {
+    } else if (ruled) {
+      // The finalizer has ruled. Its verdict is the one that counts.
+      if (ruled.hardFailureDimensions.length > 0) {
+        issues.push({
+          kind: "UNCHECKED_COMPATIBILITY",
+          detail: `${sku} failed a hard requirement (${ruled.hardFailureDimensions.join(", ")}) and cannot be recommended.`,
+        });
+      }
+    } else if (finding && finding.safety === "BLOCKED") {
       issues.push({
         kind: "UNCHECKED_COMPATIBILITY",
         detail: `${sku} failed a hard requirement (${finding.hardFailures

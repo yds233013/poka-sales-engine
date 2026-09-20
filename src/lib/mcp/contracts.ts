@@ -142,6 +142,8 @@ export const TOOL_CONTRACTS = {
     input: z.object({ sku: skuInput }),
     output: z.object({
       found: z.boolean(),
+      /** Echoes the part number asked about, so a miss is attributable. */
+      requested: z.string(),
       sku: z.string().nullable(),
       name: z.string().nullable(),
       lifecycle: z.string().nullable(),
