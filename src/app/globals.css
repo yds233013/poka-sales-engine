@@ -1,0 +1,120 @@
+@import "tailwindcss";
+
+/*
+ * Poka Sales Engine — design tokens.
+ *
+ * The visual language is deliberately quiet: an operations tool is read for
+ * hours, so colour is reserved for state that matters (pass / warn / fail /
+ * blocked) and everything else is carried by type, weight and hairline rules.
+ */
+
+@theme {
+  --color-ink-50: #f6f7f9;
+  --color-ink-100: #eceef2;
+  --color-ink-200: #dcdfe6;
+  --color-ink-300: #bcc2ce;
+  --color-ink-400: #8b94a6;
+  --color-ink-500: #667085;
+  --color-ink-600: #4c5566;
+  --color-ink-700: #3a4252;
+  --color-ink-800: #252b38;
+  --color-ink-900: #151a24;
+  --color-ink-950: #0c0f16;
+
+  --color-accent-50: #eef4ff;
+  --color-accent-100: #dae6ff;
+  --color-accent-200: #bcd2ff;
+  --color-accent-500: #2f5fd0;
+  --color-accent-600: #23499f;
+  --color-accent-700: #1b3a80;
+  --color-accent-900: #142a5c;
+
+  --color-pass-50: #eef8f0;
+  --color-pass-200: #b9e0c3;
+  --color-pass-600: #1d7a45;
+  --color-pass-700: #145c34;
+
+  --color-warn-50: #fdf5e8;
+  --color-warn-200: #f2dcae;
+  --color-warn-600: #a96b0c;
+  --color-warn-700: #85540a;
+
+  --color-fail-50: #fdeeee;
+  --color-fail-200: #f3c4c4;
+  --color-fail-600: #b02a2a;
+  --color-fail-700: #8d2222;
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-mono-stack), ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+:root {
+  --surface: #ffffff;
+  --canvas: #f4f5f7;
+  --hairline: #e3e6ec;
+  --hairline-strong: #d3d8e0;
+}
+
+* {
+  border-color: var(--hairline);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--canvas);
+  color: var(--color-ink-900);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv05" 1, "ss01" 1;
+}
+
+/* Figures in tables must line up column-wise. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.label-xs {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--color-ink-500);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-ink-300);
+  border-radius: 6px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-ink-400);
+  background-clip: content-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+  }
+  .print-full {
+    box-shadow: none !important;
+    border: none !important;
+  }
+}
