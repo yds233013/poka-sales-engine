@@ -70,15 +70,67 @@ export class AnthropicModelClient implements ModelClient {
   constructor(apiKey: string) {
     this.client = new Anthropic({ apiKey });
   }
+
+  /**
+   * Two cache breakpoints, because an agent loop re-sends everything it has
+   * already said on every turn.
+   *
+   * The first covers the system prompt and the fifteen tool schemas — roughly
+   * 4,400 tokens that are byte-identical on every call of every run. The
+   * second covers the conversation so far, which is where the real growth is:
+   * tool results accumulate, and by the last turn the transcript is most of
+   * the bill. Marking the final block means each turn pays full price only for
+   * what is new.
+   *
+   * This changes cost, not behaviour. The request is otherwise identical, and
+   * a cache miss simply bills normally.
+   */
   async createMessage(params: Parameters<ModelClient["createMessage"]>[0]): Promise<Anthropic.Message> {
     return this.client.messages.create({
       model: params.model,
-      system: params.system,
-      messages: params.messages,
-      tools: params.tools,
+      system: [{ type: "text", text: params.system, cache_control: { type: "ephemeral" } }],
+      messages: withConversationCacheBreakpoint(params.messages),
+      tools: withToolsCacheBreakpoint(params.tools),
       max_tokens: params.maxTokens,
     });
   }
+}
+
+/** Mark the last tool so the whole tool-schema block is cached. */
+function withToolsCacheBreakpoint(tools: Anthropic.Tool[]): Anthropic.Tool[] {
+  if (tools.length === 0) return tools;
+  return tools.map((tool, index) =>
+    index === tools.length - 1 ? { ...tool, cache_control: { type: "ephemeral" as const } } : tool,
+  );
+}
+
+/**
+ * Mark the end of the transcript, so the next turn reads it from cache.
+ *
+ * Only block-shaped content can carry the marker, so a plain string message is
+ * promoted to a single text block. Anything unexpected is left alone: a missed
+ * cache costs money, a malformed request costs the run.
+ */
+function withConversationCacheBreakpoint(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
+  if (messages.length === 0) return messages;
+  const out = [...messages];
+  const last = out[out.length - 1];
+
+  if (typeof last.content === "string") {
+    out[out.length - 1] = {
+      ...last,
+      content: [{ type: "text", text: last.content, cache_control: { type: "ephemeral" } }],
+    };
+    return out;
+  }
+  if (!Array.isArray(last.content) || last.content.length === 0) return out;
+
+  const blocks = [...last.content];
+  const tail = blocks[blocks.length - 1];
+  if (!tail || typeof tail !== "object") return out;
+  blocks[blocks.length - 1] = { ...tail, cache_control: { type: "ephemeral" } } as (typeof blocks)[number];
+  out[out.length - 1] = { ...last, content: blocks };
+  return out;
 }
 
 export interface AdaptiveResult {
@@ -93,6 +145,8 @@ export interface AdaptiveResult {
   toolCallCount: number;
   inputTokens: number;
   outputTokens: number;
+  cacheWriteTokens: number;
+  cacheReadTokens: number;
   errorCategory: string | null;
   error: string | null;
 }
@@ -104,10 +158,36 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   "claude-haiku-4-5-20251001": { input: 1, output: 5 },
 };
 
-export function estimateCostUsd(model: string, inputTokens: number, outputTokens: number): number | null {
+/**
+ * Cache multipliers, per Anthropic's published pricing: writing a cache entry
+ * costs 1.25x the base input rate, reading one costs 0.1x.
+ */
+const CACHE_WRITE_MULTIPLIER = 1.25;
+const CACHE_READ_MULTIPLIER = 0.1;
+
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheWriteTokens: number;
+  cacheReadTokens: number;
+}
+
+export function estimateCostUsd(
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  cacheWriteTokens = 0,
+  cacheReadTokens = 0,
+): number | null {
   const pricing = MODEL_PRICING[model];
-  if (!pricing || (inputTokens === 0 && outputTokens === 0)) return null;
-  return Number(((inputTokens / 1e6) * pricing.input + (outputTokens / 1e6) * pricing.output).toFixed(6));
+  if (!pricing) return null;
+  if (inputTokens === 0 && outputTokens === 0 && cacheWriteTokens === 0 && cacheReadTokens === 0) return null;
+  const cost =
+    (inputTokens / 1e6) * pricing.input +
+    (outputTokens / 1e6) * pricing.output +
+    (cacheWriteTokens / 1e6) * pricing.input * CACHE_WRITE_MULTIPLIER +
+    (cacheReadTokens / 1e6) * pricing.input * CACHE_READ_MULTIPLIER;
+  return Number(cost.toFixed(6));
 }
 
 /** Contracts → Anthropic tool definitions. The model sees exactly what MCP exposes. */
@@ -141,6 +221,45 @@ function zodObjectToJsonSchema(schema: {
   return { type: "object", properties, required } as Anthropic.Tool["input_schema"];
 }
 
+/**
+ * Pull Zod's validation checks into the JSON Schema the model is shown.
+ *
+ * Without this the model sees `{type: "array", items: {type: "string"}}` for a
+ * field that is really "1 to 6 questions, each 8 to 300 characters" — and the
+ * first it learns of the real bound is a -32602 rejection that costs a turn.
+ * A constraint the validator enforces but the schema does not advertise is a
+ * trap, not a contract.
+ */
+function applyChecks(node: Record<string, unknown>, current: unknown, kind: "string" | "number" | "array"): void {
+  const checks = ((current as { _def?: { checks?: unknown[] } })?._def?.checks ?? []) as unknown[];
+  for (const raw of checks) {
+    const def = ((raw as { _zod?: { def?: unknown }; def?: unknown })?._zod?.def ??
+      (raw as { def?: unknown })?.def ??
+      raw) as { check?: string; minimum?: number; maximum?: number; value?: number; inclusive?: boolean };
+    switch (def.check) {
+      case "min_length":
+        if (kind === "string") node.minLength = def.minimum;
+        else if (kind === "array") node.minItems = def.minimum;
+        break;
+      case "max_length":
+        if (kind === "string") node.maxLength = def.maximum;
+        else if (kind === "array") node.maxItems = def.maximum;
+        break;
+      case "greater_than":
+        if (typeof def.value === "number") node.minimum = def.inclusive ? def.value : def.value + 1;
+        break;
+      case "less_than":
+        if (typeof def.value === "number") node.maximum = def.inclusive ? def.value : def.value - 1;
+        break;
+      case "number_format":
+        node.type = "integer";
+        break;
+      default:
+        break;
+    }
+  }
+}
+
 function describeZod(raw: unknown): { node: Record<string, unknown>; optional: boolean } {
   let current = raw as { _def?: Record<string, unknown>; description?: string };
   let optional = false;
@@ -170,10 +289,12 @@ function describeZod(raw: unknown): { node: Record<string, unknown>; optional: b
     case "ZodString":
     case "string":
       node.type = "string";
+      applyChecks(node, current, "string");
       break;
     case "ZodNumber":
     case "number":
       node.type = "number";
+      applyChecks(node, current, "number");
       break;
     case "ZodBoolean":
     case "boolean":
@@ -185,6 +306,7 @@ function describeZod(raw: unknown): { node: Record<string, unknown>; optional: b
       const element = (current._def as { type?: unknown; element?: unknown }).element ??
         (current._def as { type?: unknown }).type;
       node.items = describeZod(element).node;
+      applyChecks(node, current, "array");
       break;
     }
     case "ZodEnum":
@@ -231,6 +353,8 @@ export async function runAdaptiveLoop(
   let state = emptyState(requestId);
   let inputTokens = 0;
   let outputTokens = 0;
+  let cacheWriteTokens = 0;
+  let cacheReadTokens = 0;
   const errorCategory: string | null = null;
   let error: string | null = null;
 
@@ -268,6 +392,11 @@ export async function runAdaptiveLoop(
 
       inputTokens += response.usage?.input_tokens ?? 0;
       outputTokens += response.usage?.output_tokens ?? 0;
+      // Cached tokens are billed separately and are not included in
+      // `input_tokens`, so they are tracked separately rather than folded in —
+      // otherwise the reported cost would silently understate the run.
+      cacheWriteTokens += response.usage?.cache_creation_input_tokens ?? 0;
+      cacheReadTokens += response.usage?.cache_read_input_tokens ?? 0;
       messages.push({ role: "assistant", content: response.content });
 
       const toolUses = response.content.filter(
@@ -390,6 +519,8 @@ export async function runAdaptiveLoop(
       toolCallCount: tracker.toolCalls,
       inputTokens,
       outputTokens,
+      cacheWriteTokens,
+      cacheReadTokens,
       errorCategory: category ?? errorCategory,
       error,
     };

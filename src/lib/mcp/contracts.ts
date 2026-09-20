@@ -391,11 +391,18 @@ export const TOOL_CONTRACTS = {
     idempotent: false,
     input: z.object({
       questions: z
-        .array(z.string().trim().min(8).max(300))
+        .array(z.string().trim().min(8).max(500))
         .min(1)
         .max(6)
-        .describe("What you need from the customer, phrased as you would write it to them."),
-      reason: z.string().trim().min(15).max(600).describe("Why the case cannot proceed without these."),
+        .describe(
+          "What you need from the customer, phrased as you would write it to them. One or two sentences each, 500 characters at the outside — a customer reads these, so ask the question rather than explaining the engineering behind it. Put that explanation in `reason`, which is operator-facing and has room for it.",
+        ),
+      reason: z
+        .string()
+        .trim()
+        .min(20)
+        .max(1200)
+        .describe("Why the case cannot proceed without these. Operator-facing, so state the technical reason in full."),
     }),
     output: z.object({ status: z.string(), questionCount: z.number(), note: z.string() }),
   },
@@ -407,7 +414,7 @@ export const TOOL_CONTRACTS = {
     effect: "HUMAN_GATED_MUTATION",
     idempotent: false,
     input: z.object({
-      reason: z.string().trim().min(20).max(800),
+      reason: z.string().trim().min(20).max(1200),
       blockingDimensions: z
         .array(z.string().trim().max(60))
         .max(8)

@@ -639,6 +639,10 @@ model AgentRun {
   toolCallCount    Int?
   inputTokens      Int?
   outputTokens     Int?
+  /// Prompt-cache tokens. Billed at different rates from plain input, so they
+  /// are kept apart rather than folded into inputTokens.
+  cacheWriteTokens Int?
+  cacheReadTokens  Int?
   /// Estimated USD cost. Only set when the provider reported token usage.
   estimatedCostUsd Decimal? @db.Decimal(10, 6)
   /// Schema-validated structured result produced by an adaptive run.

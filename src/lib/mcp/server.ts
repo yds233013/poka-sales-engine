@@ -68,7 +68,7 @@ export function createMcpServer(ctx: HandlerContext): McpServer {
           // here is what lets the trace, the UI and the eval harness tell an
           // agent decision apart from a step the finalizer took afterwards.
           const structured = await ctx.bus.withOrigin(
-            { modelInitiated: true, effect: contract.effect },
+            { modelInitiated: true, effect: contract.effect, modelInput: args },
             () => invokeHandler(ctx, name, args),
           );
           return {

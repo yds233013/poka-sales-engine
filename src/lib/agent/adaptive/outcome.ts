@@ -27,7 +27,7 @@ export const agentOutcomeSchema = z.object({
     .array(z.object({ sku: z.string(), verdict: z.string(), reason: z.string().max(400) }))
     .max(20),
   technicalEvidence: z.array(z.string().max(200)).max(20),
-  missingInformation: z.array(z.string().max(300)).max(10),
+  missingInformation: z.array(z.string().max(500)).max(10),
   riskFlags: z.array(z.string().max(200)).max(10),
   recommendationSummary: z.string().min(20).max(2000),
 });

@@ -36,6 +36,17 @@ export interface ToolResult<T> {
 export interface CallOrigin {
   modelInitiated: boolean;
   effect: ToolEffect;
+  /**
+   * The arguments the model actually sent, when this call came in over MCP.
+   *
+   * Handlers delegate to pipeline functions that record their own internal
+   * inputs — `{productId: "cmu9k7…"}` where the agent wrote `{sku: "MX-160"}`.
+   * Recording the internal form makes the trace unreadable and, worse, hides
+   * what the agent asked for, which is the one thing an operator reviewing an
+   * agent decision needs to see. Only the outermost call of an invocation
+   * takes this; nested steps keep their own inputs.
+   */
+  modelInput?: unknown;
 }
 
 export interface ToolContext {
@@ -123,6 +134,7 @@ export class ToolBus {
     const startedAt = new Date();
     const started = performance.now();
     const outer = this.origin ?? this.defaultOrigin(toolName);
+    const recordedInput = this.depth === 0 && outer.modelInput !== undefined ? outer.modelInput : input;
     // A nested call inherits the effect of what it does, never the attribution
     // of the call that contains it.
     const origin: CallOrigin =
@@ -140,7 +152,7 @@ export class ToolBus {
           runId: this.ctx.runId,
           sequence,
           toolName,
-          input: input as object,
+          input: toJson(recordedInput ?? {}),
           output: toJson(result.output),
           status: result.status ?? "OK",
           safety: result.safety ?? "AUTO_SAFE",
@@ -179,7 +191,7 @@ export class ToolBus {
           runId: this.ctx.runId,
           sequence,
           toolName,
-          input: input as object,
+          input: toJson(recordedInput ?? {}),
           status: "ERROR",
           safety: "BLOCKED",
           summary: `${toolName} failed: ${message}`,
