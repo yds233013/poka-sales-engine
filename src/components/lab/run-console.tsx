@@ -3,7 +3,8 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Panel, PanelHeader, Button, Pill, SectionLabel } from "@/components/ui/primitives";
+import { Panel, PanelHeader, Button, Pill, SectionLabel, Mono } from "@/components/ui/primitives";
+import { duration } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { runInLab, type LabRunResult } from "@/app/agent-lab/actions";
 
@@ -209,6 +210,96 @@ export function RunConsole({
           </span>
         ) : null}
       </div>
+
+      {result?.ok && result.run ? <RunRecord run={result.run} /> : null}
     </Panel>
+  );
+}
+
+/**
+ * What the run actually recorded.
+ *
+ * The provenance label is the point of this block. A scripted test run and a
+ * live one both record ADAPTIVE_AGENT with a model name, so without saying
+ * which is which the console would present a fixture as a live agent result.
+ * Token and cost figures are shown only for runs that were really billed.
+ */
+function RunRecord({ run }: { run: NonNullable<LabRunResult["run"]> }) {
+  const live = run.modelSource === "LIVE";
+  const scripted = run.modelSource === "SCRIPTED";
+  const label = scripted ? "Scripted adaptive test" : live ? "Live adaptive" : "Deterministic";
+
+  const cells: { label: string; value: string }[] = [
+    { label: "Termination", value: run.termination ?? "—" },
+    { label: "Turns", value: run.turnCount != null ? String(run.turnCount) : "—" },
+    { label: "Agent tool calls", value: String(run.toolSequence.length) },
+    { label: "Duration", value: run.durationMs != null ? duration(run.durationMs) : "—" },
+  ];
+  if (live) {
+    cells.push({
+      label: "Tokens in / out",
+      value:
+        run.inputTokens != null
+          ? `${run.inputTokens.toLocaleString()} / ${(run.outputTokens ?? 0).toLocaleString()}${
+              run.cacheReadTokens ? ` · ${run.cacheReadTokens.toLocaleString()} cached` : ""
+            }`
+          : "—",
+    });
+    cells.push({
+      label: "Estimated cost",
+      value: run.estimatedCostUsd != null ? `$${run.estimatedCostUsd.toFixed(4)}` : "—",
+    });
+  }
+
+  return (
+    <div className="border-t border-[var(--hairline)]">
+      <div className="flex items-center gap-2 px-4 py-2.5">
+        <Pill tone={scripted ? "warn" : live ? "accent" : "neutral"}>{label}</Pill>
+        {run.model ? <Mono>{run.model}</Mono> : null}
+        {scripted ? (
+          <span className="text-[11px] text-ink-500">
+            Directed by a scripted stand-in — no provider call was made and nothing was billed.
+          </span>
+        ) : null}
+      </div>
+
+      <div className="grid grid-cols-2 gap-px border-y border-[var(--hairline)] bg-[var(--hairline)] sm:grid-cols-4">
+        {cells.map((cell) => (
+          <div key={cell.label} className="bg-white px-3 py-2">
+            <div className="label-xs">{cell.label}</div>
+            <div className="tnum mt-0.5 text-[12.5px] font-medium text-ink-900">{cell.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {run.toolSequence.length > 0 ? (
+        <div className="px-4 py-2.5">
+          <div className="label-xs mb-1">Tools the model chose, in order</div>
+          <div className="flex flex-wrap items-center gap-1">
+            {run.toolSequence.map((tool, index) => (
+              <span key={`${tool}-${index}`} className="flex items-center gap-1">
+                <Mono>{tool}</Mono>
+                {index < run.toolSequence.length - 1 ? <span className="text-ink-300">→</span> : null}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {run.groundingIssues.length > 0 ? (
+        <div className="border-t border-[var(--hairline)] bg-warn-50 px-4 py-2.5">
+          <div className="label-xs mb-1 text-warn-700">
+            {run.groundingIssues.length} claim(s) rejected as unsupported — the case was routed for review
+          </div>
+          <ul className="space-y-0.5">
+            {run.groundingIssues.map((issue, index) => (
+              <li key={index} className="text-[11.5px] leading-snug text-warn-700">
+                {issue}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
   );
 }

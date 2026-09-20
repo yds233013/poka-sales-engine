@@ -76,6 +76,10 @@ export async function runAdaptiveRequest(
   options: AdaptiveRunOptions = {},
 ): Promise<AdaptiveOutcome> {
   const apiKey = adaptiveApiKey();
+  // A caller-supplied client is a scripted stand-in; only a client we build
+  // from real credentials talks to a provider. Recording which of the two ran
+  // is the difference between reporting a live agent result and inventing one.
+  const scripted = Boolean(options.modelClient);
   const modelClient: ModelClient | null = options.modelClient ?? (apiKey ? new AnthropicModelClient(apiKey) : null);
   if (!modelClient) {
     throw new AdaptiveUnavailableError(
@@ -107,6 +111,7 @@ export async function runAdaptiveRequest(
       provider: provider.id,
       mode: "ADAPTIVE_AGENT",
       model,
+      modelSource: scripted ? "SCRIPTED" : "LIVE",
       status: "RUNNING",
       startedAt: asOf,
     },
@@ -117,8 +122,8 @@ export async function runAdaptiveRequest(
   await recordAudit(prisma, requestId, {
     type: "RUN_STARTED",
     actor: "Poka Sales Engine",
-    summary: `Adaptive investigation started (${model}). Tool selection is model-directed; compatibility, stock, pricing and approvals remain deterministic.`,
-    detail: { mode: "ADAPTIVE_AGENT", model },
+    summary: `Adaptive investigation started (${model}${scripted ? ", scripted stand-in" : ""}). Tool selection is model-directed; compatibility, stock, pricing and approvals remain deterministic.`,
+    detail: { mode: "ADAPTIVE_AGENT", model, modelSource: scripted ? "SCRIPTED" : "LIVE" },
   });
 
   try {

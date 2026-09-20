@@ -317,12 +317,16 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
                     run
                       ? {
                           mode: run.mode,
+                          modelSource: run.modelSource,
                           model: run.model,
                           termination: run.termination,
                           turnCount: run.turnCount,
                           inputTokens: run.inputTokens,
                           outputTokens: run.outputTokens,
                           estimatedCostUsd: run.estimatedCostUsd ? Number(run.estimatedCostUsd) : null,
+                          cacheReadTokens: run.cacheReadTokens,
+                          cacheWriteTokens: run.cacheWriteTokens,
+                          toolCallCount: run.toolCallCount,
                           guardrailEvents: (run.guardrailEvents as { kind: string; detail: string }[] | null) ?? [],
                           groundingIssues: run.groundingIssues,
                         }

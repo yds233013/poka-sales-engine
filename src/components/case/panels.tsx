@@ -620,12 +620,23 @@ export interface TraceStep {
 
 export interface RunMeta {
   mode: "DETERMINISTIC" | "ADAPTIVE_AGENT";
+  /**
+   * Whether a real provider directed this run, or a scripted stand-in did.
+   *
+   * `mode` cannot answer that — a scripted test run records ADAPTIVE_AGENT
+   * with a model name, exactly like a live one. Presenting the two the same
+   * way would describe a fixture as a live agent result.
+   */
+  modelSource: "NONE" | "SCRIPTED" | "LIVE";
   model: string | null;
   termination: string | null;
   turnCount: number | null;
   inputTokens: number | null;
   outputTokens: number | null;
   estimatedCostUsd: number | null;
+  cacheReadTokens: number | null;
+  cacheWriteTokens: number | null;
+  toolCallCount: number | null;
   guardrailEvents: { kind: string; detail: string }[];
   groundingIssues: string[];
 }
@@ -655,6 +666,7 @@ export function TracePanel({
   run?: RunMeta | null;
 }) {
   const adaptive = run?.mode === "ADAPTIVE_AGENT";
+  const scripted = adaptive && run?.modelSource === "SCRIPTED";
   const agentCalls = steps.filter((s) => s.modelInitiated).length;
 
   return (
@@ -668,8 +680,12 @@ export function TracePanel({
         }
         actions={
           run ? (
-            <Pill tone={adaptive ? "accent" : "neutral"}>
-              {adaptive ? `Adaptive · ${run.model ?? "model"}` : "Deterministic"}
+            <Pill tone={!adaptive ? "neutral" : scripted ? "warn" : "accent"}>
+              {!adaptive
+                ? "Deterministic"
+                : scripted
+                  ? `Scripted adaptive test · ${run.model ?? "model"}`
+                  : `Live adaptive · ${run.model ?? "model"}`}
             </Pill>
           ) : null
         }
@@ -681,15 +697,21 @@ export function TracePanel({
             { label: "Termination", value: run.termination ? statusLabel(run.termination) : "—" },
             { label: "Agent tool calls", value: String(agentCalls) },
             {
-              label: "Tokens",
+              label: scripted ? "Tokens (simulated)" : "Tokens in / out",
               value:
                 run.inputTokens != null
-                  ? `${run.inputTokens.toLocaleString()} / ${(run.outputTokens ?? 0).toLocaleString()}`
+                  ? `${run.inputTokens.toLocaleString()} / ${(run.outputTokens ?? 0).toLocaleString()}${
+                      !scripted && run.cacheReadTokens ? ` · ${run.cacheReadTokens.toLocaleString()} cached` : ""
+                    }`
                   : "—",
             },
             {
-              label: "Estimated cost",
-              value: run.estimatedCostUsd != null ? `$${run.estimatedCostUsd.toFixed(4)}` : "—",
+              label: scripted ? "Cost (not billed)" : "Estimated cost",
+              value: scripted
+                ? "—"
+                : run.estimatedCostUsd != null
+                  ? `$${run.estimatedCostUsd.toFixed(4)}`
+                  : "—",
             },
           ].map((cell) => (
             <div key={cell.label} className="bg-white px-3 py-2">

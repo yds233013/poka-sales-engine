@@ -594,6 +594,18 @@ enum RunStatus {
 
 /// How a run was orchestrated. Both modes use the same engines, the same
 /// catalog and the same approval policy — only the orchestration differs.
+/// Where a run's model turns came from. The UI must never present a scripted
+/// test run as a live agent result, and `mode` alone cannot tell them apart —
+/// both record ADAPTIVE_AGENT with a model name.
+enum ModelSource {
+  /// Deterministic run. No model directed anything.
+  NONE
+  /// A scripted stand-in supplied by a test or fixture.
+  SCRIPTED
+  /// A real provider call.
+  LIVE
+}
+
 enum ExecutionMode {
   /// Fixed tool pipeline. Offline, reproducible, always available.
   DETERMINISTIC
@@ -623,6 +635,7 @@ model AgentRun {
   provider    String
   /// Model identifier for an adaptive run; null for deterministic.
   model       String?
+  modelSource ModelSource @default(NONE)
   startedAt   DateTime      @default(now())
   finishedAt  DateTime?
   durationMs  Int?

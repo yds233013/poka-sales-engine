@@ -62,6 +62,26 @@ describe("adaptive investigation", () => {
     expect(quote.status).toBe("PENDING_APPROVAL");
   });
 
+  it("marks a scripted run as scripted, never as live", async () => {
+    // The UI reads this to label a run. A scripted test and a live call both
+    // record ADAPTIVE_AGENT with a model name, so without this discriminator
+    // a fixture would be presented as a real agent result.
+    const id = await caseId("REQ-2041");
+    const result = await run(id, substitutionScript("AX-220", "PX-440"));
+    const persisted = await db.agentRun.findUniqueOrThrow({ where: { id: result.runId } });
+    expect(persisted.modelSource).toBe("SCRIPTED");
+    expect(persisted.mode).toBe("ADAPTIVE_AGENT");
+  });
+
+  it("leaves a deterministic run with no model source at all", async () => {
+    const { runSalesRequest } = await import("@/lib/agent/orchestrator");
+    const id = await caseId("REQ-2041");
+    const outcome = await runSalesRequest(db, id);
+    const persisted = await db.agentRun.findUniqueOrThrow({ where: { id: outcome.runId } });
+    expect(persisted.modelSource).toBe("NONE");
+    expect(persisted.model).toBeNull();
+  });
+
   it("records the run as adaptive with real observability", async () => {
     const id = await caseId("REQ-2041");
     const result = await run(id, substitutionScript("AX-220", "PX-440"));
