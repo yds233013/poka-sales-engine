@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Panel, PanelHeader, Button, Pill, SectionLabel, Mono } from "@/components/ui/primitives";
+import { Panel, PanelHeader, Button, Pill, SectionLabel, Mono, statusLabel } from "@/components/ui/primitives";
 import { duration } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { runInLab, type LabRunResult } from "@/app/agent-lab/actions";
@@ -229,8 +229,9 @@ function RunRecord({ run }: { run: NonNullable<LabRunResult["run"]> }) {
   const scripted = run.modelSource === "SCRIPTED";
   const label = scripted ? "Scripted adaptive test" : live ? "Live adaptive" : "Deterministic";
 
+  const answered = run.termination === "INFORMATION_PROVIDED";
   const cells: { label: string; value: string }[] = [
-    { label: "Termination", value: run.termination ?? "—" },
+    { label: "Termination", value: run.termination ? statusLabel(run.termination) : "—" },
     { label: "Turns", value: run.turnCount != null ? String(run.turnCount) : "—" },
     { label: "Agent tool calls", value: String(run.toolSequence.length) },
     { label: "Duration", value: run.durationMs != null ? duration(run.durationMs) : "—" },
@@ -261,7 +262,20 @@ function RunRecord({ run }: { run: NonNullable<LabRunResult["run"]> }) {
             Directed by a scripted stand-in — no provider call was made and nothing was billed.
           </span>
         ) : null}
+        {answered ? (
+          <Pill tone="pass">Question answered — nothing quoted</Pill>
+        ) : null}
       </div>
+
+      {answered ? (
+        <div className="border-t border-[var(--hairline)] bg-pass-50 px-4 py-2.5">
+          <p className="text-[11.5px] leading-snug text-pass-700">
+            The customer asked a question and it was answered from cited evidence. No quotation, price,
+            freight, margin or approval was produced, because none was requested. The answer is a draft for
+            a person to send.
+          </p>
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-px border-y border-[var(--hairline)] bg-[var(--hairline)] sm:grid-cols-4">
         {cells.map((cell) => (

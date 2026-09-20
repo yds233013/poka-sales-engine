@@ -407,6 +407,96 @@ async function concludeRun(args: ConcludeArgs): Promise<AdaptiveOutcome> {
     };
   }
 
+  // ── Informational answer ────────────────────────────────────────────────
+  //
+  // The customer asked a question. Nothing is priced, quoted or approved here,
+  // and the deterministic finalizer is never invoked — which is what makes
+  // "answering" structurally incapable of producing commercial commitments.
+  if (result.terminalTool === "respond_with_information") {
+    const payload = result.terminalPayload as {
+      answer: string;
+      claims: string[];
+      evidenceRefs: string[];
+      skus: string[];
+      uncertainty: string | null;
+    };
+
+    const outcome = buildOutcome(result, requestId, "INFORMATION_PROVIDED", {
+      summary: payload.answer,
+      missingInformation: payload.uncertainty ? [payload.uncertainty] : [],
+      selected: null,
+      claims: payload.claims,
+      evidence: payload.evidenceRefs,
+    });
+
+    // The same validator every other conclusion goes through. The answer and
+    // each claim are graded against what tools returned — an invented price,
+    // stock figure, part number or citation is rejected here exactly as it
+    // would be in a recommendation.
+    const issues = validate(outcome, result, args.catalog);
+    const grounded = issues.length === 0;
+    await persistMeta(grounded ? "INFORMATION_PROVIDED" : "NEEDS_INTERNAL_REVIEW", issues, outcome);
+
+    await prisma.recommendation.create({
+      data: {
+        requestId,
+        outcome: grounded ? "INFORMATION_PROVIDED" : "INFORMATION_REQUIRED",
+        headline: grounded
+          ? `Question answered from ${payload.evidenceRefs.length} cited section(s)`
+          : "Answer withheld — unsupported claims",
+        rationale: grounded
+          ? payload.answer
+          : `The agent's answer contained ${issues.length} claim(s) no tool supported and was not drafted.`,
+        risk: grounded ? "LOW" : "HIGH",
+      },
+    });
+
+    if (grounded) {
+      // A draft, never a send. The rep reviews it and completes the case.
+      await prisma.customerResponse.create({
+        data: {
+          requestId,
+          subject: `Re: ${request.subject}`,
+          body: composeInformationalLetter(args.account, payload),
+        },
+      });
+      await prisma.salesRequest.update({
+        where: { id: requestId },
+        data: { status: "RESPONSE_READY", risk: "LOW", blockedReason: null },
+      });
+      await recordAudit(prisma, requestId, {
+        type: "RESPONSE_DRAFTED",
+        actor: "Poka Sales Engine",
+        summary: `Answered the customer's question from ${payload.evidenceRefs.length} cited section(s). No quotation was produced — none was requested.`,
+        detail: { evidenceRefs: payload.evidenceRefs, skus: payload.skus },
+      });
+    } else {
+      await prisma.salesRequest.update({
+        where: { id: requestId },
+        data: {
+          status: "NEEDS_REVIEW",
+          risk: "HIGH",
+          blockedReason: `The agent's answer contained ${issues.length} claim(s) no tool supported: ${issues[0]}`,
+        },
+      });
+    }
+
+    await finishRun(prisma, run.id, bus, args.startedAt, "COMPLETED");
+    return {
+      runId: run.id,
+      status: grounded ? "RESPONSE_READY" : "NEEDS_REVIEW",
+      recommendationId: null,
+      quoteId: null,
+      approvalCount: 0,
+      termination: grounded ? "INFORMATION_PROVIDED" : "NEEDS_INTERNAL_REVIEW",
+      agentOutcome: outcome,
+      groundingIssues: issues,
+      toolSequence,
+      turnCount: result.turnCount,
+      toolCallCount: result.toolCallCount,
+    };
+  }
+
   // ── Escalation ──────────────────────────────────────────────────────────
   if (result.terminalTool === "escalate_for_review") {
     const payload = result.terminalPayload as { reason: string; blockingDimensions: string[] };
@@ -648,6 +738,8 @@ function buildOutcome(
     missingInformation: string[];
     selected: string | null;
     alternatives?: { sku: string; verdict: string; reason: string }[];
+    claims?: string[];
+    evidence?: string[];
   },
 ): AgentOutcome {
   const blocked = result.state.compatibility.filter((c) => c.safety === "BLOCKED");
@@ -665,7 +757,8 @@ function buildOutcome(
         verdict: "REJECTED",
         reason: `Failed on ${c.hardFailures.map((f) => `${f.dimension} (${f.actual} against ${f.required})`).join("; ")}`,
       })),
-    technicalEvidence: result.state.evidenceCited.slice(0, 20),
+    technicalEvidence: (parts.evidence ?? result.state.evidenceCited).slice(0, 20),
+    claims: (parts.claims ?? []).slice(0, 10),
     missingInformation: parts.missingInformation.slice(0, 10),
     riskFlags: [
       ...warned.flatMap((c) => c.warnings.map((w) => `${c.sku}: ${w}`)),
@@ -687,6 +780,7 @@ function buildOutcome(
     alternatives: [],
     technicalEvidence: [],
     missingInformation: [],
+    claims: [],
     riskFlags: ["Structured outcome failed schema validation and was reduced."],
     recommendationSummary: parts.summary.slice(0, 2000) || "No summary was produced for this run.",
   };
@@ -746,6 +840,31 @@ async function buildCandidateSources(
         : null,
     };
   });
+}
+
+/**
+ * The letter that goes in front of a person.
+ *
+ * Assembled here rather than asked of the model a second time: the answer has
+ * already been grounding-checked, and re-generating the prose would put
+ * ungraded text in the customer's letter.
+ */
+function composeInformationalLetter(
+  account: { contactName: string | null },
+  payload: { answer: string; evidenceRefs: string[]; uncertainty: string | null },
+): string {
+  const greeting = account.contactName ? `Hi ${account.contactName.split(" ")[0]},` : "Hello,";
+  const parts = [greeting, "", payload.answer];
+  if (payload.uncertainty) {
+    parts.push("", `One thing worth flagging: ${payload.uncertainty}`);
+  }
+  parts.push(
+    "",
+    `This is based on ${payload.evidenceRefs.join(", ")}. If you would like a quotation for any of it, just say and I will put one together.`,
+    "",
+    "Best regards",
+  );
+  return parts.join("\n");
 }
 
 export { gapToQuestion };

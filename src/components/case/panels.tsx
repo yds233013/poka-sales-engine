@@ -161,6 +161,7 @@ const OUTCOME_TONE: Record<string, "pass" | "accent" | "warn" | "fail"> = {
   SPLIT_FULFILLMENT: "accent",
   NO_VIABLE_OPTION: "fail",
   INFORMATION_REQUIRED: "warn",
+  INFORMATION_PROVIDED: "pass",
 };
 
 const OUTCOME_LABEL: Record<string, string> = {
@@ -169,6 +170,7 @@ const OUTCOME_LABEL: Record<string, string> = {
   SPLIT_FULFILLMENT: "Split shipment",
   NO_VIABLE_OPTION: "No viable option",
   INFORMATION_REQUIRED: "Information required",
+  INFORMATION_PROVIDED: "Question answered",
 };
 
 export function RecommendationPanel({

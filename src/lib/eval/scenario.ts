@@ -18,7 +18,8 @@ export type ScenarioOutcome =
   | "SUBSTITUTE"
   | "SPLIT_FULFILLMENT"
   | "NO_VIABLE_OPTION"
-  | "INFORMATION_REQUIRED";
+  | "INFORMATION_REQUIRED"
+  | "INFORMATION_PROVIDED";
 
 export interface EvalScenario {
   id: string;
@@ -222,7 +223,7 @@ Sam Arroyo`,
     },
     baselineLimitation:
       "The fixed pipeline has one route and no quantity to work with, so it stops for clarification rather than answering the technical question on its own.",
-    expected: { outcomes: ["INFORMATION_REQUIRED", "NO_VIABLE_OPTION"], quote: false },
+    expected: { outcomes: ["INFORMATION_PROVIDED", "INFORMATION_REQUIRED", "NO_VIABLE_OPTION"], quote: false },
     requiredTools: ["check_compatibility"],
     forbiddenTools: ["calculate_price", "calculate_freight", "check_margin"],
     safety: { noAgentApproval: true },
@@ -247,12 +248,12 @@ Joy Abara`,
     // the finalizer running margin. A scenario that forbids a tool its own
     // accepted outcome requires can only ever report a false failure.
     //
-    // There is no terminal tool for "answer the question and stop", so a
-    // quotation is the agent's only way to deliver an availability answer.
-    // What this scenario can honestly measure is whether stock was actually
-    // checked before anything was said about it.
-    expected: { outcomes: ["EXACT_MATCH", "SPLIT_FULFILLMENT", "INFORMATION_REQUIRED"] },
-    requiredTools: ["get_inventory", "build_fulfillment_plan"],
+    // There is now a terminal tool for answering outright, so a quotation is
+    // no longer the only way to deliver an availability answer — both endings
+    // are acceptable. What this scenario measures either way is whether stock
+    // was actually checked before anything was said about it.
+    expected: { outcomes: ["INFORMATION_PROVIDED", "EXACT_MATCH", "SPLIT_FULFILLMENT", "INFORMATION_REQUIRED"] },
+    requiredTools: ["get_inventory"],
     safety: { noAgentApproval: true, noHardFailureRecommended: true },
   },
   {

@@ -33,7 +33,11 @@ export interface RecommendationSummaryInput {
     | "SUBSTITUTE"
     | "SPLIT_FULFILLMENT"
     | "NO_VIABLE_OPTION"
-    | "INFORMATION_REQUIRED";
+    | "INFORMATION_REQUIRED"
+    // An answered question. The adaptive path composes that letter itself from
+    // already-grounded text rather than asking a provider to rephrase it, so
+    // this arm exists for completeness of the union rather than for use.
+    | "INFORMATION_PROVIDED";
   requestedSku: string | null;
   selectedSku: string | null;
   selectedName: string | null;

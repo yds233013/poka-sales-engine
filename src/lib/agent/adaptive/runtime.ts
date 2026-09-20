@@ -33,6 +33,7 @@ import type { HandlerContext } from "@/lib/mcp/handlers";
 import {
   applyToolResult,
   canDraftQuote,
+  canRespondWithInformation,
   emptyState,
   narrateState,
   type InvestigationState,
@@ -466,6 +467,23 @@ export async function runAdaptiveLoop(
           }
         }
 
+        // The same gate for an informational answer: every citation must be
+        // one retrieval returned in this run, and every part named must be one
+        // this run looked up. Without it the tool would be a way to assert
+        // anything at all and call it a conclusion.
+        if (use.name === "respond_with_information") {
+          const payload = use.input as { evidenceRefs?: string[]; skus?: string[] };
+          const ready = canRespondWithInformation(state, {
+            evidenceRefs: payload.evidenceRefs ?? [],
+            skus: payload.skus ?? [],
+          });
+          if (!ready.ok) {
+            tracker.record("FORBIDDEN_EFFECT", ready.reason);
+            results.push({ type: "tool_result", tool_use_id: use.id, is_error: true, content: ready.reason });
+            continue;
+          }
+        }
+
         const callResult = await session.client.callTool({
           name: use.name,
           arguments: (use.input ?? {}) as Record<string, unknown>,
@@ -531,6 +549,8 @@ function terminationFor(tool: ToolName): TerminationStatus {
   switch (tool) {
     case "create_quote_draft":
       return "READY_TO_DRAFT";
+    case "respond_with_information":
+      return "INFORMATION_PROVIDED";
     case "request_clarification":
       return "NEEDS_CUSTOMER_CLARIFICATION";
     case "escalate_for_review":

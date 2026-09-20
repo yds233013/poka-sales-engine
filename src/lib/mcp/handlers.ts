@@ -34,6 +34,7 @@ import {
   searchTechnicalDocs,
 } from "@/lib/agent/tools";
 import { contractFor, type ToolName } from "./contracts";
+import { leaksInternalLanguage } from "@/lib/agent/adaptive/outcome";
 
 const PRODUCT_INCLUDE = { category: true, specs: true } as const;
 
@@ -656,6 +657,55 @@ export const HANDLERS: HandlerMap = {
       },
       summary: `Stopped to ask the customer ${questions.length} question(s) rather than assume: ${questions[0]}`,
       safety: "NEEDS_REVIEW" as const,
+    }));
+  },
+
+  async respond_with_information(ctx, input) {
+    const answer = String(input.answer);
+    const claims = input.claims as string[];
+    const evidenceRefs = input.evidenceRefs as string[];
+    const skus = ((input.skus as string[]) ?? []).map((s) => s.trim().toUpperCase());
+    const uncertainty = input.uncertainty ? String(input.uncertainty) : null;
+
+    // Part numbers must exist. The run-scoped check — was this one actually
+    // looked up *here* — lives in `canRespondWithInformation`, which the
+    // runtime applies before the terminal action is spent.
+    if (skus.length > 0) {
+      const found = await ctx.prisma.product.findMany({ where: { sku: { in: skus } }, select: { sku: true } });
+      const missing = skus.filter((sku) => !found.some((f) => f.sku === sku));
+      if (missing.length > 0) {
+        throw new ToolInputError(
+          `These part numbers are not in the catalog: ${missing.join(", ")}. Use resolve_sku before answering about them.`,
+        );
+      }
+    }
+
+    // Internal commercial language must never reach a customer-facing answer.
+    // The same guard runs again on the persisted outcome; this one exists so
+    // the model is told immediately rather than after the run concludes.
+    if (leaksInternalLanguage(answer)) {
+      throw new ToolInputError(
+        "The answer uses internal commercial language (margin, cost, mark-up). Rewrite it as the customer should read it.",
+      );
+    }
+
+    ctx.terminal.called = "respond_with_information";
+    ctx.terminal.payload = { answer, claims, evidenceRefs, skus, uncertainty };
+
+    return ctx.bus.run("respond_with_information", { claims: claims.length, evidenceRefs, skus }, async () => ({
+      output: {
+        status: "INFORMATION_PROVIDED",
+        claimCount: claims.length,
+        evidenceCount: evidenceRefs.length,
+        note: "Investigation stopped. The answer will be grounding-checked and drafted for a person to send. Nothing was quoted, priced or approved.",
+      },
+      summary: `Answered the customer's question from ${evidenceRefs.length} retrieved section(s): ${claims[0]}`,
+      safety: "NEEDS_REVIEW" as const,
+      evidence: evidenceRefs.map((ref) => ({
+        kind: "document" as const,
+        label: ref,
+        claim: `Cited in the answer to the customer: ${ref}`,
+      })),
     }));
   },
 

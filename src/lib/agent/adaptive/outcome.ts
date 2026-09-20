@@ -27,6 +27,14 @@ export const agentOutcomeSchema = z.object({
     .array(z.object({ sku: z.string(), verdict: z.string(), reason: z.string().max(400) }))
     .max(20),
   technicalEvidence: z.array(z.string().max(200)).max(20),
+  /**
+   * Factual assertions the agent is making, one per entry.
+   *
+   * Graded exactly like the summary. An informational answer is mostly claims,
+   * so leaving them out of the graded prose would make the one outcome that is
+   * purely assertion the one nobody checks.
+   */
+  claims: z.array(z.string().max(400)).max(10).default([]),
   missingInformation: z.array(z.string().max(500)).max(10),
   riskFlags: z.array(z.string().max(200)).max(10),
   recommendationSummary: z.string().min(20).max(2000),
@@ -131,6 +139,7 @@ export function checkGrounding(
     ...outcome.alternatives.map((a) => a.reason),
     ...outcome.riskFlags,
     ...outcome.missingInformation,
+    ...outcome.claims,
   ].join("\n");
 
   // 1. Part-number-shaped tokens must be a real part or a real document.
@@ -274,7 +283,14 @@ export function checkGrounding(
   }
 
   // 6. Internal commercial language must not reach anything the customer sees.
-  //    Clarification questions are drafted straight into the customer letter.
+  //    Clarification questions and informational answers are both drafted
+  //    straight into the letter the customer receives.
+  if (leaksInternalLanguage(outcome.recommendationSummary)) {
+    issues.push({
+      kind: "INTERNAL_LANGUAGE_LEAK",
+      detail: "The customer-facing text uses internal commercial language.",
+    });
+  }
   for (const question of outcome.missingInformation) {
     if (leaksInternalLanguage(question)) {
       issues.push({
@@ -299,8 +315,30 @@ function moneyValue(text: string): number | null {
  * Strip internal commercial language from anything customer-adjacent.
  * A belt-and-braces echo of the guard in the Anthropic provider.
  */
-export const INTERNAL_LANGUAGE = /\bmargin\b|\bgross profit\b|\bstandard cost\b|\bour cost\b|\bcost of goods\b|\bmark-?up\b/i;
+/** Terms that are commercial wherever they appear. */
+export const INTERNAL_LANGUAGE =
+  /\bgross profit\b|\bstandard cost\b|\bour cost\b|\bcost of goods\b|\bmark-?up\b|\bmargin\b/i;
+
+const COMMERCIAL_ONLY = /\bgross profit\b|\bstandard cost\b|\bour cost\b|\bcost of goods\b|\bmark-?up\b/i;
+
+/**
+ * "Margin" in its engineering sense.
+ *
+ * Found in live validation: the guard rejected a perfectly good technical
+ * answer because it said there was no safety margin above the rating. Design
+ * margin, thermal margin and margin for error are exactly the words an
+ * engineer uses about a temperature limit, and blocking them makes the one
+ * outcome that is purely technical the hardest one to phrase.
+ */
+const ENGINEERING_MARGIN =
+  /\b(?:safety|design|thermal|temperature|operating|pressure|performance|power|capacity)\s+margins?\b|\bmargins?\s+(?:for|of)\s+error\b|\bmargins?\s+(?:above|below|over|under)\b/gi;
+
+const ANY_MARGIN = /\bmargins?\b/i;
 
 export function leaksInternalLanguage(text: string): boolean {
-  return INTERNAL_LANGUAGE.test(text);
+  // Take the engineering senses of "margin" out first, then judge what is
+  // left commercially. A bare "margin" that survives is the kind that must
+  // never reach a customer — "our margin on this deal".
+  const commercial = text.replace(ENGINEERING_MARGIN, " ");
+  return COMMERCIAL_ONLY.test(commercial) || ANY_MARGIN.test(commercial);
 }

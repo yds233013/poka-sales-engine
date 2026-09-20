@@ -23,6 +23,11 @@ these, that is the thing to discuss before writing it.
   price, a stock level, a compatibility verdict or an approval.
 - **The model cannot approve, release or send anything.** No tool does those
   things, and the workflow layer re-checks server-side regardless.
+- **Answering is a terminal action, not a shortcut past grounding.**
+  `respond_with_information` ends a run with an answer and never invokes the
+  finalizer, so no price, quote, approval or release can result from it. Every
+  claim and citation is checked twice: `canRespondWithInformation` before the
+  action is spent, `checkGrounding` before anything is drafted.
 - **Every technical claim requires evidence.** A price, a stock figure or a
   citation that no tool produced is rejected, and the case goes to a human
   rather than having its summary quietly rewritten.

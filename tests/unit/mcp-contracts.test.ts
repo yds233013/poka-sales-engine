@@ -57,8 +57,15 @@ describe("MCP tool contracts", () => {
     expect(TOOL_CONTRACTS.escalate_for_review.effect).toBe("HUMAN_GATED_MUTATION");
   });
 
-  it("has exactly three terminal tools and identifies them", () => {
-    expect(TERMINAL_TOOLS).toHaveLength(3);
+  it("has exactly these terminal tools, and every one of them mutates", () => {
+    // Pinned as a set rather than a count: a new way to end a run is a change
+    // to the safety surface, and it should have to be written down here.
+    expect([...TERMINAL_TOOLS].sort()).toEqual([
+      "create_quote_draft",
+      "escalate_for_review",
+      "request_clarification",
+      "respond_with_information",
+    ]);
     expect(isTerminal("create_quote_draft")).toBe(true);
     expect(isTerminal("get_inventory")).toBe(false);
     for (const name of TERMINAL_TOOLS) {

@@ -137,8 +137,48 @@ Exactly one terminal tool ends a run:
 | Tool | Termination | Effect |
 | --- | --- | --- |
 | `create_quote_draft` | `READY_FOR_APPROVAL` (or `NEEDS_INTERNAL_REVIEW` if grounding fails) | `MUTATION` |
+| `respond_with_information` | `INFORMATION_PROVIDED` (or `NEEDS_INTERNAL_REVIEW` if grounding fails) | `MUTATION` |
 | `request_clarification` | `NEEDS_CUSTOMER_CLARIFICATION` | `MUTATION` |
 | `escalate_for_review` | `NEEDS_INTERNAL_REVIEW` | `HUMAN_GATED_MUTATION` |
+
+### Answering a question
+
+Live running showed the gap plainly: asked "can the MX-160 handle 175 °C?",
+the agent had the answer after two tools and then had nowhere to put it. Its
+only endings were to ask a clarifying question it did not need, or to build a
+quotation nobody had requested. Both are wrong answers to a right question.
+
+`respond_with_information` is the missing ending. It terminates the run with
+an answer and touches no commercial state at all — the deterministic finalizer
+is never invoked on this path, so there is no code path from answering to a
+price, a quote, an approval or a release. That is structural, not a rule the
+tool promises to follow.
+
+Its input is deliberately not free prose:
+
+| Field | What it is for |
+| --- | --- |
+| `answer` | The customer-facing text, graded like any other claim |
+| `claims` | The assertions the answer rests on, one per entry, each graded |
+| `evidenceRefs` | Sections supporting them, exactly as retrieval returned them |
+| `skus` | Parts the answer is about |
+| `uncertainty` | What the evidence does not settle |
+
+Two gates, both existing machinery rather than a second validator:
+
+1. **Before the action is spent.** `canRespondWithInformation` mirrors
+   `canDraftQuote`: every citation must be one a tool returned *in this run*,
+   and every part named must be one this run looked up — found, ruled out, or
+   established as missing. A miss is a `FORBIDDEN_EFFECT` the model can
+   recover from, not a lost run.
+2. **Before anything is drafted.** The answer and every claim go through
+   `checkGrounding` unchanged. An invented price, stock figure, part number or
+   citation is rejected exactly as it would be in a recommendation, and the
+   case goes to a person with no letter written.
+
+`claims` was added to the graded prose for this. An informational outcome is
+almost entirely assertion, so leaving the claims ungraded would have made the
+one conclusion that is purely factual the one nobody checked.
 
 `escalate_for_review` earns its classification: it raises a pending
 `TECHNICAL_UNCERTAINTY` approval that an application engineer must decide. A

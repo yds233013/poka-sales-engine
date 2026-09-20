@@ -71,6 +71,7 @@ const OUTCOME_LABEL: Record<string, string> = {
   SPLIT_FULFILLMENT: "Split shipment",
   NO_VIABLE_OPTION: "No viable option",
   INFORMATION_REQUIRED: "Information required",
+  INFORMATION_PROVIDED: "Question answered",
 };
 
 export function InboxTable({ rows }: { rows: InboxRowView[] }) {

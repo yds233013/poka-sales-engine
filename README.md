@@ -362,7 +362,14 @@ pricing, freight, margin and approval policy stayed deterministic, so the
 deterministic baseline and the REQ-2041 regression are unaffected by it.
 
 **Scale:** 14 evaluation scenarios plus four bespoke adversarial requests,
-run adaptively end to end. Roughly 40 real-model runs across the exercise.
+run adaptively end to end. Roughly 45 real-model runs across the exercise.
+
+An informational terminal action (`respond_with_information` →
+`INFORMATION_PROVIDED`) was added after live running showed a question like
+"can the MX-160 handle 175 °C?" had no correct ending — the agent could only
+ask something it already knew or quote something nobody wanted. A technical
+question now resolves in five tool calls and produces an answer with no
+quotation, price, freight, margin or approval anywhere in the run.
 
 **Outcome results**
 
@@ -403,9 +410,10 @@ nothing, not that the model resists it.
   the agent stops once satisfied nothing works, so its audit record is thinner
   than the fixed pipeline's, which enumerates and records a reason against
   every candidate.
-- There is no terminal tool for "answer the question and stop", so a purely
-  informational request is concluded either by asking a clarifying question or
-  by producing a quotation nobody asked for.
+- The refusal-case gap above is intermittent rather than absolute: two live
+  runs of the same scenario, minutes apart on identical code, produced a
+  19-call investigation that evaluated the part in question and a 12-call one
+  that did not.
 - Costs are estimates from published rates, not billed amounts.
 
 ## 11. Limitations

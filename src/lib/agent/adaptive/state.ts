@@ -16,6 +16,7 @@ import { z } from "zod";
 
 export const TERMINATION_STATUSES = [
   "READY_FOR_APPROVAL",
+  "INFORMATION_PROVIDED",
   "READY_TO_DRAFT",
   "NEEDS_CUSTOMER_CLARIFICATION",
   "NEEDS_INTERNAL_REVIEW",
@@ -297,6 +298,65 @@ export function canDraftQuote(
       reason: `Every candidate failed a hard compatibility requirement — ${detail}. Nothing here can be quoted. Find another candidate, or use escalate_for_review.`,
     };
   }
+  return { ok: true };
+}
+
+/**
+ * Preconditions for answering an informational request.
+ *
+ * This is the gate that stops `respond_with_information` becoming a way to
+ * assert anything the model likes. Its whole value is that an answer must be
+ * assembled from things already established by tools in *this* run — so every
+ * citation has to be one retrieval actually returned, and every part named has
+ * to be one the catalog was actually asked about.
+ *
+ * Checked before the terminal action is spent, so a model that is close but
+ * missing a lookup gets told what to go and fetch rather than losing the run.
+ */
+export function canRespondWithInformation(
+  state: InvestigationState,
+  input: { evidenceRefs: string[]; skus: string[] },
+): { ok: true } | { ok: false; reason: string } {
+  if (!state.requirementsLoaded) {
+    return { ok: false, reason: "The case requirements have not been read. Call get_request_state first." };
+  }
+  if (input.evidenceRefs.length === 0) {
+    return {
+      ok: false,
+      reason:
+        "An informational answer must cite the evidence it rests on. Retrieve the relevant section with search_technical_docs or check_compatibility first.",
+    };
+  }
+
+  const retrieved = new Set(state.evidenceCited.map((e) => e.toUpperCase().replace(/\s+/g, " ").trim()));
+  const unknown = input.evidenceRefs.filter(
+    (ref) => !retrieved.has(ref.toUpperCase().replace(/\s+/g, " ").trim()),
+  );
+  if (unknown.length > 0) {
+    return {
+      ok: false,
+      reason: `No tool in this run returned ${unknown.join(", ")}. Cite only sections retrieval actually produced${
+        state.evidenceCited.length ? ` — you have ${state.evidenceCited.join(", ")}` : ", and you have none yet"
+      }.`,
+    };
+  }
+
+  // A part number in the answer must be one this run looked at, whether it was
+  // found, ruled out, or established as missing.
+  const known = new Set([
+    ...state.resolvedSkus,
+    ...state.unresolvedSkus,
+    ...state.candidatesConsidered,
+    ...state.compatibility.map((c) => c.sku),
+  ].map((s) => s.toUpperCase()));
+  const unchecked = input.skus.filter((sku) => !known.has(sku.toUpperCase()));
+  if (unchecked.length > 0) {
+    return {
+      ok: false,
+      reason: `${unchecked.join(", ")} was never looked up in this run. Call resolve_sku or check_compatibility before answering about it.`,
+    };
+  }
+
   return { ok: true };
 }
 

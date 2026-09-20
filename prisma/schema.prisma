@@ -615,6 +615,8 @@ enum ExecutionMode {
 
 /// Where an adaptive run ended up. Deterministic runs record COMPLETED.
 enum TerminationStatus {
+  /// The run answered an informational request from evidence it had gathered.
+  INFORMATION_PROVIDED
   COMPLETED
   READY_FOR_APPROVAL
   READY_TO_DRAFT
@@ -752,6 +754,10 @@ enum RecommendationOutcome {
   SPLIT_FULFILLMENT
   NO_VIABLE_OPTION
   INFORMATION_REQUIRED
+  /// The customer asked a question and it was answered from evidence. No
+  /// product was recommended and nothing was quoted, because neither was asked
+  /// for. Pairs with INFORMATION_REQUIRED: one needs information, one gives it.
+  INFORMATION_PROVIDED
 }
 
 model Recommendation {

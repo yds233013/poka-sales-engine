@@ -150,6 +150,20 @@ report a few hundred input tokens across fourteen runs; the cache line is what
 says how much the model actually read. Cost includes cache writes at 1.25x and
 reads at 0.1x.
 
+### Answering, measured live
+
+Adding `respond_with_information` changed what the two question-shaped
+scenarios do. Measured on claude-sonnet-5:
+
+| | Tool path | Ending |
+| --- | --- | --- |
+| C. Technical question | `resolve_sku → get_product → search_technical_docs → get_request_state → respond_with_information` | `INFORMATION_PROVIDED`, no quote |
+| D. Availability question | `resolve_customer → resolve_sku → get_request_state → get_inventory → build_fulfillment_plan → search_technical_docs → respond_with_information` | `INFORMATION_PROVIDED`, no quote |
+
+Neither called `calculate_price`, `calculate_freight`, `check_margin` or
+`evaluate_approvals`. Scenario C previously took nine to eleven agent calls to
+reach a clarifying question it did not need; it now takes five and answers.
+
 ### The one failure
 
 `refusal-no-viable-option` — the agent reached the correct outcome
@@ -161,6 +175,14 @@ cases the adaptive agent stops once it is satisfied nothing works, where the
 fixed pipeline enumerates the category and records a reason against every
 candidate. The agent's answer is right and its audit record is thinner.
 Relaxing the check would hide that, and it is worth knowing.
+
+It is also **intermittent**, which is worth knowing separately. Two live runs
+of this scenario minutes apart, on identical code, produced a 19-call
+investigation that did evaluate AX-240 and a 12-call one that did not. So the
+gap is not that the agent cannot reach AX-240 — it is that whether it does is
+not reliable. Adding the informational terminal did not affect this: the agent
+correctly chose `escalate_for_review` over answering, because the customer had
+asked to buy rather than asked a question.
 
 ### Earlier live runs
 

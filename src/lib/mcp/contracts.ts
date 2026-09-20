@@ -419,6 +419,54 @@ export const TOOL_CONTRACTS = {
     output: z.object({ status: z.string(), questionCount: z.number(), note: z.string() }),
   },
 
+  respond_with_information: {
+    title: "Answer the customer's question and stop",
+    description:
+      "Conclude the investigation by answering a question the customer actually asked — \"can the MX-160 handle 175 °C?\", \"do you have twelve in stock?\" — where no quotation was requested. Use this instead of quoting something nobody asked to buy, and instead of asking a clarifying question you already have the answer to.\n\nEvery claim must rest on evidence this run retrieved, and every section you cite must be one a tool actually returned; the tool refuses otherwise. It cannot price, quote, approve or release anything. If the customer did ask to buy, use create_quote_draft. If you genuinely cannot answer from what you have, retrieve more or use request_clarification.",
+    effect: "MUTATION",
+    idempotent: false,
+    input: z.object({
+      answer: z
+        .string()
+        .trim()
+        .min(30)
+        .max(1500)
+        .describe(
+          "The answer as you would write it to the customer. Plain, direct, and confined to what the evidence supports. No prices, no stock figures you did not look up, no internal commercial language.",
+        ),
+      claims: z
+        .array(z.string().trim().min(10).max(400))
+        .min(1)
+        .max(8)
+        .describe(
+          "The factual assertions the answer rests on, one per entry, each stated plainly — e.g. \"The MX-160 is rated to 140 °C maximum fluid temperature\". These are graded against what the tools returned.",
+        ),
+      evidenceRefs: z
+        .array(z.string().trim().min(3).max(60))
+        .min(1)
+        .max(12)
+        .describe(
+          "The sections supporting those claims, exactly as retrieval returned them — e.g. \"DS-1026 §2.1\". A citation no tool in this run produced is refused.",
+        ),
+      skus: z
+        .array(skuInput)
+        .max(6)
+        .describe("Part numbers the answer is about. Each must be one this run actually looked up."),
+      uncertainty: z
+        .string()
+        .trim()
+        .max(600)
+        .optional()
+        .describe("Anything the evidence does not settle, stated plainly. Leave it out only if there is none."),
+    }),
+    output: z.object({
+      status: z.string(),
+      claimCount: z.number(),
+      evidenceCount: z.number(),
+      note: z.string(),
+    }),
+  },
+
   escalate_for_review: {
     title: "Escalate to a human specialist",
     description:
@@ -453,6 +501,7 @@ export const TOOL_NAMES = Object.keys(TOOL_CONTRACTS) as ToolName[];
 export const TERMINAL_TOOLS: ToolName[] = [
   "create_quote_draft",
   "request_clarification",
+  "respond_with_information",
   "escalate_for_review",
 ];
 
