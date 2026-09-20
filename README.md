@@ -4,9 +4,18 @@
 customer request into a technically validated, commercially sound, approval-gated quotation,
 with every claim traceable to the record it came from.
 
-> Independent demonstration project. Every company, person, product, price, document and stock
-> position in it is synthetic, generated for this build. It is not connected to Poka or to any
-> real system, and it is not a production Poka product.
+**The agent decides how to investigate. Deterministic engines decide what is true.**
+
+A model reads the customer's prose, chooses which tools to call and in what order, judges when it
+has enough evidence, and writes the explanation. It never decides whether a part is compatible,
+what is in stock, what something costs, or who has to approve it. Those answers come from engines
+that would give the same result with no model present at all — and a claim the engines did not
+produce is rejected before it reaches a customer.
+
+> Independent demonstration project, built from Poka's public description of its business and its
+> Technical Sales direction. Every company, person, product, price, document and stock position in
+> it is synthetic, generated for this build. It is not connected to Poka or to any real system, no
+> private Poka systems or architecture were involved, and it is not a production Poka product.
 
 ---
 
@@ -79,37 +88,67 @@ See [`docs/AGENT_ARCHITECTURE.md`](docs/AGENT_ARCHITECTURE.md),
 
 ## 4. Architecture
 
+```mermaid
+flowchart TD
+    REQ["Inbound request<br/><i>email, portal, phone note</i>"] --> EXTRACT
+
+    EXTRACT["Request understanding<br/><i>deterministic extractor: line items,<br/>quantity, dates, technical requirements</i>"] --> MODE{"Execution<br/>mode"}
+
+    MODE -->|"DETERMINISTIC"| PIPE["Fixed tool pipeline<br/><i>same order every time, runs offline</i>"]
+    MODE -->|"ADAPTIVE_AGENT"| AGENT["Adaptive agent loop<br/><i>model chooses tools, order and depth</i>"]
+
+    AGENT --> MCP
+    PIPE --> MCP
+
+    MCP["<b>MCP tool boundary</b><br/><i>16 typed capabilities over JSON-RPC.<br/>No database handle, no credentials,<br/>no connection string crosses this line.</i>"]
+
+    MCP --> CATALOG[("Catalog<br/>+ specs")]
+    MCP --> DOCS[("Technical<br/>library")]
+    MCP --> INV[("Inventory<br/>+ inbound")]
+    MCP --> CUST[("Accounts<br/>+ contracts")]
+
+    CATALOG --> ENGINES
+    DOCS --> ENGINES
+    INV --> ENGINES
+    CUST --> ENGINES
+
+    ENGINES["<b>Deterministic engines</b><br/>compatibility · available-to-promise<br/>pricing · freight · margin · approval policy<br/><i>pure functions over stored data</i>"]
+
+    ENGINES --> FINAL["finalizeCase()<br/><i>the single path to a recommendation,<br/>a quote and its approvals</i>"]
+
+    FINAL --> GROUND{"Grounding<br/>check"}
+    GROUND -->|"claim no tool supported"| REVIEW["Routed to a person<br/><i>nothing drafted</i>"]
+    GROUND -->|"every claim supported"| HUMAN
+
+    HUMAN["<b>Human approval</b><br/><i>role-gated, server-enforced.<br/>The agent cannot decide these.</i>"]
+
+    HUMAN --> OUT["Customer-safe output<br/><i>no cost, no margin, no internal figures</i>"]
+
+    classDef model fill:#eef2ff,stroke:#6366f1,color:#1e1b4b
+    classDef boundary fill:#fff7ed,stroke:#ea580c,color:#431407
+    classDef deterministic fill:#f0fdf4,stroke:#16a34a,color:#052e16
+    classDef human fill:#fef2f2,stroke:#dc2626,color:#450a0a
+    class AGENT model
+    class MCP boundary
+    class ENGINES,FINAL,PIPE deterministic
+    class HUMAN,REVIEW human
 ```
-inbound request
-      │
-      ▼
- AI provider ──── analyzeRequest()  ← the only place a model touches the request
-      │                              (deterministic rule-based extractor by default)
-      ▼
- requirements  (EXPLICIT | INFERRED | AMBIGUOUS | MISSING)
-      │
-      ▼
- orchestrator ── fixed tool pipeline, every call recorded
-      │
-      ├─ resolve_customer        account, site, price book, terms
-      ├─ resolve_sku             part numbers validated against the catalog
-      ├─ search_technical_docs   ranked retrieval over the document library
-      ├─ find_substitutes        curated engineering replacement links
-      ├─ screen_candidates       whole-category screen, ranked by closeness
-      ├─ check_compatibility     ← declarative rules; HARD failures BLOCK
-      ├─ check_inventory         ← ATP = on hand − reserved; split planning
-      ├─ calculate_price         ← contract > (book vs volume) > list
-      ├─ calculate_freight       ← per leg; upgrades service to hit a deadline
-      ├─ check_margin            ← freight treated as cost of sale
-      └─ evaluate_approvals      ← policy thresholds from the database
-      │
-      ▼
- recommendation + quote + approvals + evidence + audit trail
-      │
-      ▼
- AI provider ──── summarizeRecommendation() / draftCustomerResponse()
-                  (given the computed facts; may rephrase, may not add)
-```
+
+The orange band is the security boundary. Everything above it may be influenced by a model;
+nothing above it can reach the database. The green band is what a model can never author, and the
+red band is what it can never decide.
+
+The tools behind that boundary:
+
+| Tool | Effect | What it owns |
+| --- | --- | --- |
+| `resolve_customer`, `resolve_sku`, `get_product`, `search_catalog`, `search_technical_docs`, `get_inventory`, `get_request_state`, `get_customer_history` | READ ONLY | Identity, specifications, documents, stock positions |
+| `check_compatibility` | DETERMINISTIC COMPUTATION | Declarative rules; a HARD failure blocks the part, and no prompt can argue with it |
+| `build_fulfillment_plan` | DETERMINISTIC COMPUTATION | ATP = on hand − reserved; split planning against the required-by date |
+| `calculate_price` | DETERMINISTIC COMPUTATION | Contract > better of (price book, volume break) > list. Never stacked |
+| `find_substitutes` | DETERMINISTIC COMPUTATION | Curated engineering replacement links, then a whole-category screen |
+| `create_quote_draft`, `request_clarification`, `respond_with_information` | MUTATION | End a run. Produce a draft; none of them can release anything |
+| `escalate_for_review` | HUMAN-GATED MUTATION | Raises a pending approval a named role must decide |
 
 Every tool invocation persists its name, inputs, output, duration, status, safety class and the
 evidence it produced. The "What the engine did" panel on a case reads that table back — it is the
@@ -127,10 +166,24 @@ executed trace, not a narration written afterwards. Chain-of-thought is never ca
 | `src/lib/ai/` | Provider abstraction, the deterministic extractor, the mock provider, the optional Claude provider, mode availability. |
 | `src/lib/workflow.ts` | Human transitions — approval decisions, quote release, response edits, case completion. Re-derives its own preconditions. |
 | `prisma/seed/` | The synthetic world: catalog generator, rules, documentation, commercial data, accounts, scenarios. |
-| `tests/unit/` | 223 tests over the engines, MCP contracts, guardrails, grounding and the scenario set, with no database. |
-| `tests/integration/` | 106 tests running the real orchestrator, the real MCP server and the adaptive runtime against a real seeded PostgreSQL database. |
+| `tests/unit/` | 261 tests over the engines, MCP contracts, guardrails, grounding and the scenario set, with no database. |
+| `tests/integration/` | 117 tests running the real orchestrator, the real MCP server and the adaptive runtime against a real seeded PostgreSQL database. |
 
-## 4. The human approval model
+**Where to look first**, if you are reviewing rather than running it:
+
+| To see | Open |
+| --- | --- |
+| What the agent can do at all | [`src/lib/mcp/contracts.ts`](src/lib/mcp/contracts.ts) — every tool, its schema and its effect, in one registry |
+| The agent loop itself | [`src/lib/agent/adaptive/runtime.ts`](src/lib/agent/adaptive/runtime.ts) |
+| Why a model cannot author a fact | [`src/lib/agent/adaptive/outcome.ts`](src/lib/agent/adaptive/outcome.ts) — the grounding checks |
+| The one path to a quote | `finalizeCase` in [`src/lib/agent/orchestrator.ts`](src/lib/agent/orchestrator.ts) |
+| Business rules, with no database | [`src/lib/engines/`](src/lib/engines) |
+| What humans control | [`src/lib/workflow.ts`](src/lib/workflow.ts) |
+| How it is scored | [`src/lib/eval/scenario.ts`](src/lib/eval/scenario.ts) and [`runner.ts`](src/lib/eval/runner.ts) |
+| Measured live results | [`src/lib/eval/captured.ts`](src/lib/eval/captured.ts) |
+| The invariants that must not break | [`CLAUDE.md`](CLAUDE.md) |
+
+## 5. The human approval model
 
 Some decisions are not the system's to make. The approval engine evaluates every finished deal
 against written policy and returns the set of approvals it needs:
@@ -169,7 +222,7 @@ upgrade or a sub-policy margin is needs-review. A candidate that fails a hard co
 requirement is blocked, and `assertNotBlocked()` throws rather than returning a flag, so a missed
 check cannot be quietly ignored downstream.
 
-## 5. Technical validation
+## 6. Technical validation
 
 Compatibility is a set of declarative rules in the database, each binding one extracted
 requirement to one product spec with an operator and a severity:
@@ -205,7 +258,7 @@ Ranking puts **deliverability above technical score**: a part that arrives after
 date is not the recommendation, even if it is the better engineering fit. The operator sees that
 trade stated, rather than buried in a number.
 
-## 6. The commercial engine
+## 7. The commercial engine
 
 **Inventory.** Available-to-promise is `on hand − reserved`, computed in exactly one place.
 Quoting stock already allocated to someone else's order is the easiest way for a system like this
@@ -232,7 +285,7 @@ split, easily enough to manufacture a policy breach that did not exist.
 `assertTotalsConsistent()` re-derives the arithmetic before any quote is persisted. A quote whose
 lines do not add up to its own total is worse than no quote at all.
 
-## 7. Demo scenarios
+## 8. Demo scenarios
 
 Eleven cases are seeded. They are **not** fixtures with baked-in answers — the seed runs the same
 orchestrator the UI does, so each one ends where it does because the catalog, stock table and
@@ -254,7 +307,7 @@ policy thresholds make it end there.
 
 See [`docs/DEMO.md`](docs/DEMO.md) for a 4-minute script.
 
-## 8. Running locally
+## 9. Running locally
 
 **Prerequisites:** Node 20+ and either Docker or a local PostgreSQL 14+.
 
@@ -314,8 +367,8 @@ No pricing, inventory, compatibility or approval decision passes through it.
 | `npm run db:setup` | Generate client, push schema, seed and run the agent |
 | `npm run db:seed` | Re-seed only (resets the demo to its starting state) |
 | `npm run db:studio` | Prisma Studio |
-| `npm run test:unit` | 223 engine, contract, guardrail, grounding and scenario tests; no database |
-| `npm run test:integration` | 106 tests against a throwaway seeded database |
+| `npm run test:unit` | 261 engine, contract, guardrail, grounding and scenario tests; no database |
+| `npm run test:integration` | 117 tests against a throwaway seeded database |
 | `npm run eval` | Evaluation suite, both modes, printed table |
 | `npm test` | Both suites |
 | `npm run typecheck` | `tsc --noEmit` |
@@ -323,9 +376,9 @@ No pricing, inventory, compatibility or approval decision passes through it.
 | `npm run verify` | typecheck → lint → tests → production build |
 | `npx tsx scripts/inspect-case.ts REQ-2041` | Dump one case end to end in the terminal |
 
-## 9. Testing
+## 10. Testing
 
-**329 tests** — 223 unit, 106 integration. The split is deliberate: the engines take plain data and return plain data, never
+**378 tests** — 261 unit, 117 integration. The split is deliberate: the engines take plain data and return plain data, never
 importing Prisma, which is what makes it practical to write adversarial tests for pricing, ATP and
 approval policy without a fixture scaffold.
 
@@ -351,7 +404,7 @@ as request content, policy still applies), double approval decisions, release wi
 pending, release after a rejection, a sales rep attempting an engineer's sign-off, and completion
 before a response exists. Every one is expected to fail closed.
 
-## 10. Live agent evaluation
+## 11. Live agent evaluation
 
 Everything above runs offline. This section is the one part that required a
 real model, and it is reported separately for that reason.
@@ -416,7 +469,7 @@ nothing, not that the model resists it.
   that did not.
 - Costs are estimates from published rates, not billed amounts.
 
-## 11. Limitations
+## 12. Limitations
 
 Stated plainly, because a demonstration that oversells itself is worse than one that does less.
 
