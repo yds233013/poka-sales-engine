@@ -10,6 +10,7 @@ import { EVAL_SCENARIOS } from "@/lib/eval/scenario";
 import { McpInspector, type ToolSpec } from "@/components/lab/mcp-inspector";
 import { RunConsole } from "@/components/lab/run-console";
 import { EvalDashboard } from "@/components/lab/eval-dashboard";
+import { LiveValidation } from "@/components/lab/live-validation";
 import { dateTime, duration } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -110,6 +111,7 @@ export default async function AgentLabPage() {
 
       <div className="mt-5 grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
         <div className="flex min-w-0 flex-col gap-5">
+          <LiveValidation />
           <RunConsole modes={modes} scenarios={scenarios} accounts={accounts} />
           <EvalDashboard adaptiveAvailable={adaptiveAvailable} />
         </div>
@@ -131,8 +133,20 @@ export default async function AgentLabPage() {
                     <Link href={`/cases/${run.request.id}#trace`} className="block px-4 py-2.5 hover:bg-ink-50">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <Mono>{run.request.reference}</Mono>
-                        <Pill tone={run.mode === "ADAPTIVE_AGENT" ? "accent" : "neutral"}>
-                          {run.mode === "ADAPTIVE_AGENT" ? "Adaptive" : "Deterministic"}
+                        <Pill
+                          tone={
+                            run.modelSource === "LIVE"
+                              ? "accent"
+                              : run.modelSource === "SCRIPTED"
+                                ? "warn"
+                                : "neutral"
+                          }
+                        >
+                          {run.modelSource === "LIVE"
+                            ? "Live adaptive"
+                            : run.modelSource === "SCRIPTED"
+                              ? "Scripted test"
+                              : "Deterministic"}
                         </Pill>
                         {run.termination ? (
                           <Pill

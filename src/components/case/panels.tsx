@@ -300,6 +300,11 @@ export function AlternativesPanel({ candidates }: { candidates: CandidateRow[] }
   const viable = considered.filter((c) => c.verdict !== "REJECTED");
   const rejected = considered.filter((c) => c.verdict === "REJECTED");
 
+  // Candidates arrive ranked, so the first rejections are the near misses.
+  const SHOWN_REJECTIONS = 2;
+  const shownRejections = rejected.slice(0, SHOWN_REJECTIONS);
+  const remainingRejections = rejected.slice(SHOWN_REJECTIONS);
+
   if (considered.length === 0) return null;
 
   return (
@@ -321,14 +326,33 @@ export function AlternativesPanel({ candidates }: { candidates: CandidateRow[] }
         </ul>
       ) : null}
 
-      {rejected.length > 0 ? (
+      {/* The nearest misses are the interesting ones and they were previously
+          all behind a collapse. Why the two closest parts were ruled out is
+          the clearest evidence that a rule engine, not a model, made the
+          decision — so it is shown, and the long tail is folded away. */}
+      {shownRejections.length > 0 ? (
+        <>
+          <div className="border-t border-[var(--hairline)] bg-ink-50/50 px-4 py-2">
+            <SectionLabel>
+              {viable.length > 0 ? "Closest parts ruled out" : "Ruled out"}
+            </SectionLabel>
+          </div>
+          <ul className="divide-y divide-[var(--hairline)]">
+            {shownRejections.map((candidate) => (
+              <CandidateItem key={candidate.id} candidate={candidate} />
+            ))}
+          </ul>
+        </>
+      ) : null}
+
+      {remainingRejections.length > 0 ? (
         <details className="group border-t border-[var(--hairline)]">
-          <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-[12.5px] font-medium text-ink-600 hover:bg-ink-50">
+          <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-[12.5px] font-medium text-ink-600 hover:bg-ink-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent-500">
             <span className="text-ink-400 transition-transform group-open:rotate-90">›</span>
-            {rejected.length} rejected — show why each was ruled out
+            {remainingRejections.length} further {remainingRejections.length === 1 ? "part" : "parts"} ruled out — show the reasons
           </summary>
           <ul className="divide-y divide-[var(--hairline)] border-t border-[var(--hairline)]">
-            {rejected.map((candidate) => (
+            {remainingRejections.map((candidate) => (
               <CandidateItem key={candidate.id} candidate={candidate} />
             ))}
           </ul>

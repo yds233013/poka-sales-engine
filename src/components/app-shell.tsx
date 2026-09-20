@@ -18,9 +18,12 @@ const NAV = [
 export function AppShell({
   children,
   provider,
+  adaptiveModel,
 }: {
   children: ReactNode;
   provider: { id: string; label: string; remote: boolean; note: string };
+  /** Model name when a provider is configured, null when running offline. */
+  adaptiveModel: string | null;
 }) {
   const pathname = usePathname() ?? "/";
 
@@ -59,14 +62,12 @@ export function AppShell({
           className="hidden shrink-0 items-center gap-2 lg:flex"
           title={provider.note}
         >
-          <span
-            className={cn(
-              "size-1.5 rounded-full",
-              provider.remote ? "bg-accent-500" : "bg-pass-600",
-            )}
-          />
+          {/* What can actually run, not which extractor is configured. The
+              engines are deterministic in both cases; what changes is whether
+              a model is available to direct an investigation. */}
+          <span className={cn("size-1.5 rounded-full", adaptiveModel ? "bg-accent-500" : "bg-pass-600")} />
           <span className="text-[11.5px] text-ink-500">
-            {provider.remote ? provider.label : "Deterministic mode"}
+            {adaptiveModel ? `Deterministic + adaptive · ${adaptiveModel}` : "Deterministic · offline"}
           </span>
         </div>
       </header>
