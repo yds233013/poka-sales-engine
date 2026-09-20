@@ -313,6 +313,21 @@ export function canDraftQuote(
  * Checked before the terminal action is spent, so a model that is close but
  * missing a lookup gets told what to go and fetch rather than losing the run.
  */
+/**
+ * Reduce a citation to the pair that identifies it.
+ *
+ * Live running showed the agent citing "DS-1026 §2.1 - Process limits" — the
+ * right section with its heading attached — and being refused by an exact
+ * string match that was listing "DS-1026 §2.1" as available in the same
+ * breath. The document and anchor are what identify a section; a trailing
+ * human-readable label is decoration. A citation that does not name both is
+ * compared as written, so nothing becomes citable by being vague.
+ */
+function canonicalCitation(text: string): string {
+  const match = /([A-Z]{2,4}-\d{2,5})\s*§\s*(\d+(?:\.\d+)*)/i.exec(text);
+  return match ? `${match[1].toUpperCase()} §${match[2]}` : text.toUpperCase().replace(/\s+/g, " ").trim();
+}
+
 export function canRespondWithInformation(
   state: InvestigationState,
   input: { evidenceRefs: string[]; skus: string[] },
@@ -328,10 +343,8 @@ export function canRespondWithInformation(
     };
   }
 
-  const retrieved = new Set(state.evidenceCited.map((e) => e.toUpperCase().replace(/\s+/g, " ").trim()));
-  const unknown = input.evidenceRefs.filter(
-    (ref) => !retrieved.has(ref.toUpperCase().replace(/\s+/g, " ").trim()),
-  );
+  const retrieved = new Set(state.evidenceCited.map(canonicalCitation));
+  const unknown = input.evidenceRefs.filter((ref) => !retrieved.has(canonicalCitation(ref)));
   if (unknown.length > 0) {
     return {
       ok: false,

@@ -61,6 +61,19 @@ describe("preconditions for answering", () => {
     ).toEqual({ ok: true });
   });
 
+  it("accepts a citation the model annotated with the section heading", () => {
+    // Live failure: the agent cited "DS-1026 §2.1 - Process limits" — the
+    // right section with its own heading attached — and was refused by an
+    // exact string match that listed "DS-1026 §2.1" as available in the same
+    // message. The document and anchor identify a section; the label does not.
+    expect(
+      canRespondWithInformation(investigated(), {
+        evidenceRefs: ["DS-1026 §2.1 - Process limits"],
+        skus: ["MX-160"],
+      }),
+    ).toEqual({ ok: true });
+  });
+
   it("refuses a citation no tool in this run produced", () => {
     const result = canRespondWithInformation(investigated(), {
       evidenceRefs: ["DS-9999 §4.4"],
