@@ -371,7 +371,11 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
                         ? "Discount, margin, quote value, technical checks and fulfillment are all inside policy."
                         : request.status === "BLOCKED"
                           ? "The engine refused to produce a recommendation, so no quote exists. This enquiry belongs with application engineering."
-                          : "The engine stopped before producing a quote and is waiting on information from the customer."
+                          : !recommendation
+                            ? "Nothing has been analysed on this case yet, so there is nothing to decide."
+                            : recommendation.outcome === "INFORMATION_PROVIDED"
+                              ? "The customer asked a question and it was answered from evidence. No quotation was produced, so no approval is needed."
+                              : "The engine stopped before producing a quote and is waiting on information from the customer."
                     }
                   />
                 ) : (

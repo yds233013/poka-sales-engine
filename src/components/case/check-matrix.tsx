@@ -50,7 +50,7 @@ export function CheckMatrix({
           <div
             key={check.id}
             className={cn(
-              "grid grid-cols-[110px_1fr] items-start gap-x-3 gap-y-1 px-4 py-2.5 sm:grid-cols-[110px_150px_150px_1fr]",
+              "grid grid-cols-[104px_minmax(0,1fr)] items-start gap-x-3 gap-y-1 px-4 py-2.5 lg:grid-cols-[104px_minmax(0,1.1fr)_minmax(0,1.1fr)_minmax(0,1.6fr)]",
               check.result === "FAIL" && "bg-fail-50/40",
               check.result === "WARNING" && "bg-warn-50/40",
             )}
@@ -62,13 +62,13 @@ export function CheckMatrix({
               ) : null}
             </div>
             <div className="text-[12.5px] font-medium text-ink-900">{check.label}</div>
-            <div className="hidden text-[12px] text-ink-500 sm:block">
+            <div className="hidden text-[12px] text-ink-500 lg:block">
               <span className="label-xs mr-1 !text-ink-400">need</span>
               {check.requirement}
             </div>
-            <div className="col-span-2 sm:col-span-1">
+            <div className="col-span-2 lg:col-span-1">
               <div className="text-[12px] text-ink-700">
-                <span className="label-xs mr-1 !text-ink-400 sm:hidden">need {check.requirement} ·</span>
+                <span className="label-xs mr-1 !text-ink-400 lg:hidden">need {check.requirement} ·</span>
                 <span className="label-xs mr-1 !text-ink-400">has</span>
                 {check.actual}
               </div>

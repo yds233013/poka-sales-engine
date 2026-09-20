@@ -39,6 +39,20 @@ export function McpInspector({ tools, serverName, serverVersion }: { tools: Tool
         title="MCP tool surface"
         subtitle={`${tools.length} tools served by ${serverName} v${serverVersion} over the Model Context Protocol. This is the complete set of capabilities the agent can reach.`}
       />
+      {/* The security claim, where someone checking it will look. It is the
+          first question a reviewer asks about an agent with tools. */}
+      <div className="border-b border-[var(--hairline)] bg-ink-50/60 px-4 py-2.5">
+        <p className="text-[11.5px] leading-relaxed text-ink-700">
+          The model has <span className="font-medium">no database handle, no connection string and no
+          credentials</span>. It receives these typed capabilities and nothing else, and every result
+          it sees is a validated structure rather than a row. Business logic stays behind this line:
+          a tool takes <span className="font-medium">selectors</span> — which part, which document —
+          never facts. <Mono className="!text-[10.5px]">check_compatibility</Mono> accepts a part
+          number and loads the requirements itself, because a caller that could supply its own
+          requirements could make anything pass.
+        </p>
+      </div>
+
       <div className="flex flex-wrap gap-1.5 border-b border-[var(--hairline)] px-4 py-2">
         {byEffect.map((effect) => {
           const count = tools.filter((t) => t.effect === effect).length;
