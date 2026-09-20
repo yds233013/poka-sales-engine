@@ -431,6 +431,11 @@ const NOT_PART_OF_SKU = "(?<![-\\w.])";
 
 const QUANTITY_PATTERNS: RegExp[] = [
   new RegExp(`${NOT_PART_OF_SKU}(\\d{1,4})\\s*(?:x|×)\\s*[A-Z]{2,3}-\\d{2,4}`, "i"),
+  // "12 AX-220" — a count sitting directly against a part number, with no
+  // multiplication sign between them. Ordinary in buyer prose and previously
+  // unmatched, which made an availability request look like it had no
+  // quantity at all.
+  new RegExp(`${NOT_PART_OF_SKU}(\\d{1,4})\\s+[A-Z]{2,3}-\\d{2,4}\\b`, "i"),
   new RegExp(`${NOT_PART_OF_SKU}(\\d{1,4})\\s*(?:off|units?|pcs?|pieces?|ea)\\b`, "i"),
   new RegExp(`\\b(?:qty|quantity)\\s*[:=]?\\s*${NOT_PART_OF_SKU}(\\d{1,4})\\b`, "i"),
   new RegExp(
@@ -441,9 +446,31 @@ const QUANTITY_PATTERNS: RegExp[] = [
   new RegExp(`${NOT_PART_OF_SKU}(\\d{1,4})\\s*(?:more|additional)\\b`, "i"),
 ];
 
+/**
+ * Number words, so "twelve AX-220" reads the same as "12 AX-220".
+ *
+ * Normalising to digits before matching means every pattern above gains word
+ * support at once, rather than each one growing an alternation. Only counts a
+ * buyer plausibly writes out are listed — past twenty, people use digits.
+ */
+const NUMBER_WORDS: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17,
+  eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50, dozen: 12,
+};
+
+const NUMBER_WORD_PATTERN = new RegExp(`\\b(?:a\\s+)?(${Object.keys(NUMBER_WORDS).join("|")})\\b`, "gi");
+
+function normaliseNumberWords(text: string): string {
+  return text.replace(NUMBER_WORD_PATTERN, (match, word: string) => {
+    const value = NUMBER_WORDS[word.toLowerCase()];
+    return value === undefined ? match : String(value);
+  });
+}
+
 function findQuantity(text: string): number | null {
   for (const pattern of QUANTITY_PATTERNS) {
-    const match = pattern.exec(text);
+    const match = pattern.exec(text) ?? pattern.exec(normaliseNumberWords(text));
     if (match) {
       const value = Number(match[1]);
       if (Number.isInteger(value) && value > 0 && value < 10000) return value;

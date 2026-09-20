@@ -13,7 +13,9 @@ import { TOOL_CONTRACTS } from "@/lib/mcp/contracts";
  * secret is a trap rather than a contract.
  */
 describe("tool schemas exposed to the model", () => {
-  const byName = Object.fromEntries(toolDefinitions().map((t) => [t.name, t]));
+  const byName: Record<string, ReturnType<typeof toolDefinitions>[number]> = Object.fromEntries(
+    toolDefinitions().map((t) => [t.name, t]),
+  );
 
   it("publishes array bounds", () => {
     const questions = (byName.request_clarification.input_schema.properties as Record<string, Record<string, unknown>>)
@@ -39,8 +41,9 @@ describe("tool schemas exposed to the model", () => {
 
   it("carries every contract to the model with a description", () => {
     for (const name of Object.keys(TOOL_CONTRACTS)) {
-      expect(byName[name], `${name} is not exposed`).toBeDefined();
-      expect(byName[name].description.length).toBeGreaterThan(40);
+      const tool = byName[name];
+      expect(tool, `${name} is not exposed`).toBeDefined();
+      expect((tool.description ?? "").length).toBeGreaterThan(40);
     }
   });
 

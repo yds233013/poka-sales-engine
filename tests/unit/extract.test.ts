@@ -263,3 +263,33 @@ describe("inference from the incumbent part", () => {
     ).toBe(true);
   });
 });
+
+describe("quantity forms buyers actually write", () => {
+  // Found in live validation: an availability request reading "twelve AX-220"
+  // extracted no quantity at all, so the agent could not answer it and asked
+  // for something the customer had already said.
+  const qty = (body: string) => {
+    const result = extractRequest(body, context);
+    const requirement = result.requirements.find((r) => r.key === "quantity");
+    return requirement?.kind === "EXPLICIT" ? Number(requirement.numValue) : null;
+  };
+
+  it("reads a bare count sitting against a part number", () => {
+    expect(qty("Do you have 12 AX-220 available next week?")).toBe(12);
+  });
+
+  it("reads a count written as a word", () => {
+    expect(qty("Do you have twelve AX-220 available next week?")).toBe(12);
+    expect(qty("Please quote six PX-440 for Dallas.")).toBe(6);
+  });
+
+  it("still refuses to read a frame size as a count", () => {
+    // "AX-220 units" must never yield 220 — the regression these patterns
+    // were originally written to prevent.
+    expect(qty("Send pricing for AX-220 units when you can.")).toBeNull();
+  });
+
+  it("still finds nothing when the request states nothing", () => {
+    expect(qty("Can the MX-160 handle 175 C? Not asking for a quote yet.")).toBeNull();
+  });
+});
