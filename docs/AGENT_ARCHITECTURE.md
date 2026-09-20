@@ -121,7 +121,14 @@ names with no inference in it. That buys three things:
   never compatibility-checked, the account was never resolved, or no quantity
   was established — *before* the agent spends its one terminal action.
 - **Truthful narration.** The operator-facing step list is derived from state,
-  so it can only describe work that happened.
+  so it can only describe work that happened. It is persisted to
+  `AgentRun.trace` at the end of the run, alongside the tool calls themselves.
+
+A tool that is built on another — `build_fulfillment_plan` runs
+`check_inventory`, `find_substitutes` runs `screen_candidates` — records both,
+but only the outer one is marked `modelInitiated`. The agent chose the outer
+call; the outer call chose the inner. An "agent chose" mark is only worth
+reading if it means exactly that.
 
 ## 5. Termination
 
@@ -133,10 +140,22 @@ Exactly one terminal tool ends a run:
 | `request_clarification` | `NEEDS_CUSTOMER_CLARIFICATION` | `MUTATION` |
 | `escalate_for_review` | `NEEDS_INTERNAL_REVIEW` | `HUMAN_GATED_MUTATION` |
 
+`escalate_for_review` earns its classification: it raises a pending
+`TECHNICAL_UNCERTAINTY` approval that an application engineer must decide. A
+blocked case sitting in nobody's queue would make the label decorative.
+
 A run that never concludes terminates `GUARDRAIL_STOP`; a provider outage
 terminates `FAILED`. Both route the case to a human and leave no quote behind.
 The model cannot invent a status — these are a closed enum, and the mapping
 from tool to status is in code.
+
+### Release is decided after grounding, not before
+
+The deterministic pipeline releases a quote inline when every policy check is
+inside limits. The adaptive path holds that decision back (`deferAutoRelease`)
+until the grounding verdict is in, so a quote is never released on the strength
+of a summary that is about to be rejected. The eligibility decision is still
+the finalizer's; only its timing moves.
 
 ## 6. Guardrails
 
@@ -162,11 +181,29 @@ then checked against state:
 
 | Check | Rejects |
 | --- | --- |
-| `UNKNOWN_SKU` | A part number not in the catalog |
+| `UNKNOWN_SKU` | A token that is neither a catalog part number nor a document on file |
 | `UNCHECKED_COMPATIBILITY` | A recommendation that never went through the engine, or that failed a hard rule |
-| `UNGROUNDED_INVENTORY` | A stock claim with no inventory or fulfillment call |
+| `UNGROUNDED_INVENTORY` | A stock figure no inventory or fulfillment result returned |
 | `UNGROUNDED_PRICE` | A money figure the pricing engine never returned |
 | `UNGROUNDED_EVIDENCE` | A citation no document search produced |
+| `INTERNAL_LANGUAGE_LEAK` | Margin or cost language in a question bound for the customer |
+
+Three of these are stricter than they look, deliberately:
+
+- Document numbers (`DS-1020`) are shaped exactly like part numbers, so the
+  catalog of *both* is passed in. Otherwise a correctly cited piece of
+  evidence reads as a fabricated SKU and the happy path fails on itself.
+- **Every** money figure must match one the engine returned, not merely one of
+  them. A rule satisfied by any single match waves through the dangerous
+  shape: a true unit price lending credibility to an invented total.
+- A stock claim is checked against the number. Checking only that *an*
+  inventory tool ran would let "180 units in stock" pass on a lookup that
+  returned 6.
+
+Clarification questions are graded alongside the summary, because they are
+drafted straight into the letter the customer receives. Where a question fails,
+the agent's wording is dropped entirely and the case goes to a person — the
+deterministic open questions still stand.
 
 An ungrounded summary is **not** quietly rewritten. The case is routed to a
 human, because a recommendation nobody can trace is worth less than none. The

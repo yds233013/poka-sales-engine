@@ -80,6 +80,17 @@ export class ToolBus {
     return { modelInitiated: false, effect: contractFor(toolName)?.effect ?? "DETERMINISTIC_COMPUTATION" };
   }
 
+  /**
+   * How many tool invocations are currently on the stack.
+   *
+   * Some tools are built on others — `build_fulfillment_plan` runs
+   * `check_inventory`, `find_substitutes` runs `screen_candidates`. The agent
+   * chose the outer one; the outer one chose the inner. Attributing both to
+   * the agent would put an "agent chose" mark on a tool it never named, and
+   * the trace is only worth reading if that mark is exact.
+   */
+  private depth = 0;
+
   constructor(private readonly ctx: ToolContext) {}
 
   get context(): ToolContext {
@@ -111,8 +122,15 @@ export class ToolBus {
     const sequence = ++this.sequence;
     const startedAt = new Date();
     const started = performance.now();
-    const origin = this.origin ?? this.defaultOrigin(toolName);
+    const outer = this.origin ?? this.defaultOrigin(toolName);
+    // A nested call inherits the effect of what it does, never the attribution
+    // of the call that contains it.
+    const origin: CallOrigin =
+      this.depth === 0
+        ? outer
+        : { modelInitiated: false, effect: contractFor(toolName)?.effect ?? outer.effect };
 
+    this.depth += 1;
     try {
       const result = await fn(this.ctx);
       const durationMs = Math.max(1, Math.round(performance.now() - started));
@@ -174,6 +192,8 @@ export class ToolBus {
       });
       this.calls.push({ id: call.id, sequence, toolName, summary: message, status: "ERROR" });
       throw error;
+    } finally {
+      this.depth -= 1;
     }
   }
 }

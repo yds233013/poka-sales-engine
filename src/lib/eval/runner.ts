@@ -33,9 +33,11 @@ export interface EvalResult {
   scenarioId: string;
   title: string;
   mode: EvalMode;
-  status: "PASS" | "FAIL" | "ERROR" | "NOT_RUN";
+  status: "PASS" | "FAIL" | "EXPECTED_GAP" | "ERROR" | "NOT_RUN";
   /** Why the scenario did not run. Only set when status is NOT_RUN. */
   notRunReason: string | null;
+  /** Why the baseline was expected to fall short. Only set when status is EXPECTED_GAP. */
+  expectedGapReason: string | null;
   outcome: string | null;
   selectedSku: string | null;
   checks: EvalCheck[];
@@ -148,6 +150,7 @@ export async function runScenario(
     selectedSku: null,
     checks: [] as EvalCheck[],
     toolSequence: [] as string[],
+    expectedGapReason: null as string | null,
     error: null,
     metrics: {
       toolCalls: 0,
@@ -170,6 +173,7 @@ export async function runScenario(
     return {
       ...base,
       status: "NOT_RUN",
+      expectedGapReason: null,
       notRunReason:
         "Adaptive mode requires a configured model provider. No ANTHROPIC_API_KEY is set, so this scenario was not executed and has no adaptive metrics.",
     };
@@ -194,17 +198,27 @@ export async function runScenario(
     const message = error instanceof Error ? error.message : String(error);
     const scored = await scoreRun(prisma, scenario, requestId, mode, groundingIssues, Date.now() - startedAt);
     if (ephemeral) await prisma.salesRequest.delete({ where: { id: requestId } }).catch(() => undefined);
-    return { ...base, ...scored, status: "ERROR", notRunReason: null, error: message };
+    return { ...base, ...scored, status: "ERROR", notRunReason: null, expectedGapReason: null, error: message };
   }
 
   const scored = await scoreRun(prisma, scenario, requestId, mode, groundingIssues, Date.now() - startedAt);
   const failed = scored.checks.filter((c) => !c.passed);
 
+  // A declared baseline limitation downgrades a capability shortfall to an
+  // expected gap — but never a safety failure. Recommending a hard-failed part
+  // or deciding an approval is a FAIL regardless of what the scenario expects.
+  const expectedGap =
+    mode === "DETERMINISTIC" &&
+    Boolean(scenario.baselineLimitation) &&
+    failed.length > 0 &&
+    failed.every((c) => !c.critical);
+
   const result: EvalResult = {
     ...base,
     ...scored,
-    status: failed.length === 0 ? "PASS" : "FAIL",
+    status: failed.length === 0 ? "PASS" : expectedGap ? "EXPECTED_GAP" : "FAIL",
     notRunReason: null,
+    expectedGapReason: expectedGap ? (scenario.baselineLimitation ?? null) : null,
   };
 
   if (ephemeral) await prisma.salesRequest.delete({ where: { id: requestId } }).catch(() => undefined);
@@ -219,7 +233,7 @@ async function scoreRun(
   mode: EvalMode,
   groundingIssues: number,
   durationMs: number,
-): Promise<Omit<EvalResult, "scenarioId" | "title" | "mode" | "status" | "notRunReason">> {
+): Promise<Omit<EvalResult, "scenarioId" | "title" | "mode" | "status" | "notRunReason" | "expectedGapReason">> {
   const request = await prisma.salesRequest.findUniqueOrThrow({
     where: { id: requestId },
     include: {

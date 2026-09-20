@@ -28,7 +28,13 @@ function pad(value: string, width: number): string {
 
 function line(result: EvalResult): string {
   const status =
-    result.status === "PASS" ? "PASS " : result.status === "NOT_RUN" ? "  -  " : result.status.slice(0, 5);
+    result.status === "PASS"
+      ? "PASS "
+      : result.status === "NOT_RUN"
+        ? "  -  "
+        : result.status === "EXPECTED_GAP"
+          ? " gap "
+          : result.status.slice(0, 5);
   const tools =
     result.status === "NOT_RUN"
       ? "—"
@@ -80,7 +86,9 @@ async function main() {
   let passed = 0;
   let failed = 0;
   let notRun = 0;
+  let expectedGaps = 0;
   const failures: { scenario: string; mode: string; detail: string }[] = [];
+  const gaps: { scenario: string; reason: string }[] = [];
 
   for (const scenario of scenarios) {
     console.log(`\n  ${scenario.title}`);
@@ -94,6 +102,11 @@ async function main() {
       ran += 1;
       if (result.status === "PASS") {
         passed += 1;
+      } else if (result.status === "EXPECTED_GAP") {
+        // A declared limitation of the fixed pipeline. Reported, never hidden,
+        // but it does not fail the gate — it is the measurement.
+        expectedGaps += 1;
+        gaps.push({ scenario: scenario.id, reason: result.expectedGapReason ?? "" });
       } else {
         failed += 1;
         for (const check of result.checks.filter((c) => !c.passed)) {
@@ -105,7 +118,17 @@ async function main() {
   }
 
   console.log(`\n  ${"─".repeat(92)}`);
-  console.log(`  ${passed}/${ran} passed${notRun > 0 ? `, ${notRun} not run (no provider configured)` : ""}\n`);
+  const parts = [`${passed}/${ran} passed`];
+  if (expectedGaps > 0) parts.push(`${expectedGaps} expected baseline gap(s)`);
+  if (failed > 0) parts.push(`${failed} failed`);
+  if (notRun > 0) parts.push(`${notRun} not run (no provider configured)`);
+  console.log(`  ${parts.join(", ")}\n`);
+
+  if (gaps.length > 0) {
+    console.log("  Expected baseline gaps — scenarios the fixed pipeline cannot work:");
+    for (const gap of gaps) console.log(`    ${gap.scenario} — ${gap.reason}`);
+    console.log("");
+  }
 
   if (failures.length > 0) {
     console.log("  Failures:");

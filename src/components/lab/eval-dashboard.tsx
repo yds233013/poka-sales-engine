@@ -10,7 +10,16 @@ const STATUS_TONE: Record<string, Tone> = {
   PASS: "pass",
   FAIL: "fail",
   ERROR: "fail",
+  // A documented limit of the fixed pipeline, not a defect. Shown in warning
+  // tone rather than red, because a red row reads as "something broke" and
+  // this is the measurement the adaptive column exists to be compared against.
+  EXPECTED_GAP: "warn",
   NOT_RUN: "neutral",
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  EXPECTED_GAP: "BASELINE GAP",
+  NOT_RUN: "NOT RUN",
 };
 
 /**
@@ -33,6 +42,7 @@ export function EvalDashboard({ adaptiveAvailable }: { adaptiveAvailable: boolea
   const summary = suite
     ? {
         deterministicPass: suite.rows.filter((r) => r.deterministic.status === "PASS").length,
+        deterministicGap: suite.rows.filter((r) => r.deterministic.status === "EXPECTED_GAP").length,
         adaptivePass: suite.rows.filter((r) => r.adaptive.status === "PASS").length,
         adaptiveNotRun: suite.rows.filter((r) => r.adaptive.status === "NOT_RUN").length,
         total: suite.rows.length,
@@ -67,10 +77,15 @@ export function EvalDashboard({ adaptiveAvailable }: { adaptiveAvailable: boolea
         />
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-px border-b border-[var(--hairline)] bg-[var(--hairline)] sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-px border-b border-[var(--hairline)] bg-[var(--hairline)] sm:grid-cols-5">
             {[
               { label: "Scenarios", value: String(summary!.total), tone: "" },
               { label: "Deterministic passed", value: `${summary!.deterministicPass}/${summary!.total}`, tone: "text-pass-700" },
+              {
+                label: "Beyond the baseline",
+                value: String(summary!.deterministicGap),
+                tone: summary!.deterministicGap > 0 ? "text-warn-700" : "text-ink-400",
+              },
               {
                 label: "Adaptive passed",
                 value: summary!.adaptiveNotRun === summary!.total ? "NOT RUN" : `${summary!.adaptivePass}/${summary!.total - summary!.adaptiveNotRun}`,
@@ -131,7 +146,12 @@ export function EvalDashboard({ adaptiveAvailable }: { adaptiveAvailable: boolea
                           {isAdaptive ? "Adaptive" : "Deterministic"}
                         </td>
                         <td className="px-3 py-2 align-top">
-                          <Pill tone={STATUS_TONE[r.status]}>{r.status.replace("_", " ")}</Pill>
+                          <Pill tone={STATUS_TONE[r.status]}>{STATUS_LABEL[r.status] ?? r.status}</Pill>
+                          {r.expectedGapReason ? (
+                            <p className="mt-1 max-w-[16rem] text-[11px] leading-snug text-ink-500">
+                              {r.expectedGapReason}
+                            </p>
+                          ) : null}
                         </td>
                         <td className="px-3 py-2 align-top text-[11.5px] whitespace-nowrap text-ink-600">
                           {notRun ? <span className="text-ink-300">—</span> : (r.outcome ?? "—")}

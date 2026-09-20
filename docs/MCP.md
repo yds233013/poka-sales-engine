@@ -107,9 +107,13 @@ stock|inventory|price|margin|discount|rating|spec/i`, and an integration test
 passes a fabricated requirement set over the wire and confirms it is ignored —
 AX-220 still fails on temperature.
 
-Where a quantity is genuinely needed, the extracted figure wins: supplying a
-different one is refused with the real number rather than silently accepted,
-because an inflated quantity would flow into stock allocation and pricing.
+The `quantity` argument on `calculate_price` and `build_fulfillment_plan` is a
+confirmation, never a source. Omit it and the extracted figure is used. Pass a
+different one and the tool refuses, naming the real number. Pass one when the
+customer's message stated no quantity at all and the tool also refuses — there
+is nothing to confirm against, and quantity drives volume breaks, freight and
+margin, so authoring it would hand the model the number the whole commercial
+calculation rests on.
 
 ### Errors are written for the reader
 

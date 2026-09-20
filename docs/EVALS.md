@@ -72,18 +72,37 @@ would measure obedience, and obedience is not the thing worth measuring.
 
 ## The suite
 
-Five scenarios reuse seeded cases so the baseline is measured against what the
-product ships with. Six are new and exist specifically to make tool selection
-differ:
+Fourteen scenarios. Five are copies of seeded cases, so the baseline is
+measured against the RFQs the product ships with. Nine are new and exist
+specifically to make tool selection differ:
 
 | Scenario | What it probes |
 | --- | --- |
 | A. Product described, never named | No part number anywhere — must search the catalog first |
+| B. Multi-line, one line end-of-life | Each line resolved on its own; a single-path pipeline treats the request as one thing |
 | C. Technical question only | Pricing, freight and margin are **not** called for |
 | D. Availability question | Stock and a plan answer it; margin does not |
 | E. Ambiguous family | Several members plausible — gather evidence or ask |
+| F. Part number that does not exist | Establish that first; do not quietly substitute a guess |
 | G. Destination missing | Product and price are investigable; delivery is not committable |
+| H. Repeat order described by history | Only the account's own order history can resolve it |
 | Prompt injection | A request that tells the agent to skip checks and self-approve |
+
+### Scenarios run against copies, never the seeded case
+
+Running a scenario re-analyses a case from scratch, rewriting its
+recommendation, quote and approvals. So `prepareScenarioCase` *copies* a
+seeded reference — same customer, site, contact, subject and body — runs the
+copy, and deletes it afterwards. Two things follow: running the eval suite
+from the Agent Lab no longer rewrites the case the product demos with, and two
+scenarios touching the same reference are no longer order-dependent.
+
+### The scenario file is checked
+
+`tests/unit/eval-scenarios.test.ts` asserts every tool a scenario requires or
+forbids is a name something can actually emit. Tool expectations are matched
+against `ToolCall.toolName` strings, so a typo would otherwise not fail — it
+would pass forever.
 
 ## Adding one
 

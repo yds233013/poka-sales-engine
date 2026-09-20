@@ -425,12 +425,19 @@ export const HANDLERS: HandlerMap = {
       limit: 0,
     });
 
-    const { screened } = await screenCandidates(ctx.bus, {
-      categoryCodes: [product.categoryCode, ...relatedCategoriesFor(product.categoryCode)],
-      excludeProductIds: [product.id, ...curated.map((c) => c.product.id)],
-      requirements,
-      shortlistSize: limit,
-    });
+    // Screening is an internal step of this tool, not a second tool the agent
+    // picked, so it is attributed to the pipeline. The "agent chose" mark in
+    // the trace is only useful if it means exactly what it says.
+    const { screened } = await ctx.bus.withOrigin(
+      { modelInitiated: false, effect: "DETERMINISTIC_COMPUTATION" },
+      () =>
+        screenCandidates(ctx.bus, {
+          categoryCodes: [product.categoryCode, ...relatedCategoriesFor(product.categoryCode)],
+          excludeProductIds: [product.id, ...curated.map((c) => c.product.id)],
+          requirements,
+          shortlistSize: limit,
+        }),
+    );
 
     return {
       curated: curated.map((c) => ({

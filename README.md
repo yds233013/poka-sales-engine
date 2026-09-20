@@ -127,8 +127,8 @@ executed trace, not a narration written afterwards. Chain-of-thought is never ca
 | `src/lib/ai/` | Provider abstraction, the deterministic extractor, the mock provider, the optional Claude provider, mode availability. |
 | `src/lib/workflow.ts` | Human transitions — approval decisions, quote release, response edits, case completion. Re-derives its own preconditions. |
 | `prisma/seed/` | The synthetic world: catalog generator, rules, documentation, commercial data, accounts, scenarios. |
-| `tests/unit/` | 160 tests over the engines, with no database. |
-| `tests/integration/` | 53 tests running the real orchestrator against a real seeded PostgreSQL database. |
+| `tests/unit/` | 223 tests over the engines, MCP contracts, guardrails, grounding and the scenario set, with no database. |
+| `tests/integration/` | 104 tests running the real orchestrator, the real MCP server and the adaptive runtime against a real seeded PostgreSQL database. |
 
 ## 4. The human approval model
 
@@ -314,8 +314,8 @@ No pricing, inventory, compatibility or approval decision passes through it.
 | `npm run db:setup` | Generate client, push schema, seed and run the agent |
 | `npm run db:seed` | Re-seed only (resets the demo to its starting state) |
 | `npm run db:studio` | Prisma Studio |
-| `npm run test:unit` | 206 engine, contract, guardrail and grounding tests; no database |
-| `npm run test:integration` | 99 tests against a throwaway seeded database |
+| `npm run test:unit` | 223 engine, contract, guardrail, grounding and scenario tests; no database |
+| `npm run test:integration` | 104 tests against a throwaway seeded database |
 | `npm run eval` | Evaluation suite, both modes, printed table |
 | `npm test` | Both suites |
 | `npm run typecheck` | `tsc --noEmit` |
@@ -325,7 +325,7 @@ No pricing, inventory, compatibility or approval decision passes through it.
 
 ## 9. Testing
 
-**213 tests.** The split is deliberate: the engines take plain data and return plain data, never
+**327 tests** — 223 unit, 104 integration. The split is deliberate: the engines take plain data and return plain data, never
 importing Prisma, which is what makes it practical to write adversarial tests for pricing, ATP and
 approval policy without a fixture scaffold.
 

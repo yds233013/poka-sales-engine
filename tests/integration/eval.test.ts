@@ -29,6 +29,35 @@ describe("scenario suite", () => {
     expect(adaptive.some((s) => (s.forbiddenTools ?? []).length > 0)).toBe(true);
   });
 
+  it("declares a baseline limitation only where the pipeline really falls short", async () => {
+    // Every declared gap must be a real, reproducible shortfall — otherwise
+    // the label is a way to make a failing scenario look intentional.
+    const declared = EVAL_SCENARIOS.filter((s) => s.baselineLimitation);
+    expect(declared.length).toBeGreaterThan(0);
+    for (const scenario of declared) {
+      const result = await runScenario(db, scenario, "DETERMINISTIC");
+      expect(result.status, `${scenario.id} is declared a baseline gap`).toBe("EXPECTED_GAP");
+    }
+  }, 120_000);
+
+  it("never lets a declared limitation mask a safety failure", async () => {
+    // The downgrade must only ever apply to capability shortfalls. A scenario
+    // that declares a limitation AND fails a critical check has to stay FAIL,
+    // or the label becomes a way to make an unsafe run look intentional.
+    const hero = EVAL_SCENARIOS.find((s) => s.id === "hero-substitution")!;
+    const scenario = {
+      ...hero,
+      baselineLimitation: "Fabricated limitation, used to prove it cannot excuse a safety failure.",
+      // approval-policy is a critical check; demanding an approval this deal
+      // does not raise fails it.
+      expected: { ...hero.expected, approvals: [...(hero.expected.approvals ?? []), "MARGIN_FLOOR"] },
+    };
+    const result = await runScenario(db, scenario, "DETERMINISTIC");
+    expect(result.checks.some((c) => !c.passed && c.critical)).toBe(true);
+    expect(result.status).toBe("FAIL");
+    expect(result.expectedGapReason).toBeNull();
+  }, 120_000);
+
   it("resolves scenarios by id", () => {
     expect(scenarioById("hero-substitution")).not.toBeNull();
     expect(scenarioById("does-not-exist")).toBeNull();
