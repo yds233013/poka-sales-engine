@@ -9,7 +9,9 @@
  * step confined to a database whose name this file chose.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 // Vitest does not read .env the way Next.js does, so load it here before
 // deriving the test database URL from DATABASE_URL.
@@ -41,6 +43,41 @@ function sql(adminUrl: string, statement: string, allowFailure = false) {
   }
 }
 
+/**
+ * Guard against two integration runs at once.
+ *
+ * The suite drops and recreates its database, so a second concurrent run
+ * destroys the first one's schema mid-test and both fail in confusing ways.
+ * A lock turns that into one clear message instead of two mysteries.
+ */
+function acquireLock(): () => void {
+  const lockPath = join(tmpdir(), `poka-integration-${TEST_DB_NAME}.lock`);
+  if (existsSync(lockPath)) {
+    const raw = Number(readFileSync(lockPath, "utf8").trim());
+    const alive = Number.isFinite(raw) && isRunning(raw);
+    if (alive) {
+      throw new Error(
+        `Another integration test run (pid ${raw}) is already using "${TEST_DB_NAME}". ` +
+          `Wait for it to finish, or remove ${lockPath} if that process is gone.`,
+      );
+    }
+    // Stale lock from a killed run.
+    rmSync(lockPath, { force: true });
+  }
+  mkdirSync(tmpdir(), { recursive: true });
+  writeFileSync(lockPath, String(process.pid));
+  return () => rmSync(lockPath, { force: true });
+}
+
+function isRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export default async function setup() {
   if (!/test/.test(TEST_DB_NAME)) {
     throw new Error(
@@ -48,6 +85,7 @@ export default async function setup() {
     );
   }
 
+  const releaseLock = acquireLock();
   process.env.DATABASE_URL = TEST_URL;
   const adminUrl = TEST_URL.replace(`/${TEST_DB_NAME}`, "/postgres");
 
@@ -60,4 +98,7 @@ export default async function setup() {
     stdio: "ignore",
   });
   execFileSync("npx", ["tsx", "prisma/seed.ts"], { env, stdio: "ignore" });
+
+  // Vitest calls the returned teardown after the suite finishes.
+  return releaseLock;
 }

@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { checkGrounding, agentOutcomeSchema, leaksInternalLanguage } from "@/lib/agent/adaptive/outcome";
 import { applyToolResult, canDraftQuote, emptyState, narrateState } from "@/lib/agent/adaptive/state";
 
-const KNOWN = new Set(["PX-440", "AX-220", "MX-160"]);
+const CATALOG = {
+  skus: new Set(["PX-440", "AX-220", "MX-160"]),
+  documents: new Set(["DS-1020", "DS-9999", "RG-2207"]),
+};
 
 function outcome(overrides: Partial<Parameters<typeof checkGrounding>[0]> = {}) {
   return agentOutcomeSchema.parse({
@@ -35,6 +38,9 @@ function investigated() {
   state = applyToolResult(state, "calculate_price", {
     sku: "PX-440",
     unitPrice: "$8,483.20",
+    listPrice: "$9,980.00",
+    extended: "$101,798.40",
+    considered: [{ unitPrice: "$9,481.00" }],
     priceSource: "PRICE_BOOK",
   });
   return state;
@@ -42,21 +48,21 @@ function investigated() {
 
 describe("grounding checks", () => {
   it("passes a fully supported summary", () => {
-    expect(checkGrounding(outcome(), investigated(), KNOWN)).toHaveLength(0);
+    expect(checkGrounding(outcome(), investigated(), CATALOG)).toHaveLength(0);
   });
 
   it("rejects a part number that is not in the catalog", () => {
     const issues = checkGrounding(
       outcome({ resolvedProduct: "ZX-999", recommendationSummary: "ZX-999 is the right part here." }),
       investigated(),
-      KNOWN,
+      CATALOG,
     );
     expect(issues.some((i) => i.kind === "UNKNOWN_SKU")).toBe(true);
   });
 
   it("rejects a recommendation that never went through the compatibility engine", () => {
     const state = emptyState("case-1");
-    const issues = checkGrounding(outcome(), state, KNOWN);
+    const issues = checkGrounding(outcome(), state, CATALOG);
     expect(issues.some((i) => i.kind === "UNCHECKED_COMPATIBILITY")).toBe(true);
   });
 
@@ -71,7 +77,7 @@ describe("grounding checks", () => {
       ],
       evidence: [],
     });
-    const issues = checkGrounding(outcome(), state, KNOWN);
+    const issues = checkGrounding(outcome(), state, CATALOG);
     expect(issues.some((i) => i.kind === "UNCHECKED_COMPATIBILITY" && /hard requirement/i.test(i.detail))).toBe(true);
   });
 
@@ -83,7 +89,7 @@ describe("grounding checks", () => {
     const issues = checkGrounding(
       outcome({ recommendationSummary: "We have 40 units in stock and can ship immediately." }),
       state,
-      KNOWN,
+      CATALOG,
     );
     expect(issues.some((i) => i.kind === "UNGROUNDED_INVENTORY")).toBe(true);
   });
@@ -92,7 +98,7 @@ describe("grounding checks", () => {
     const issues = checkGrounding(
       outcome({ recommendationSummary: "Priced at $1,234.56 per unit for this account." }),
       investigated(),
-      KNOWN,
+      CATALOG,
     );
     expect(issues.some((i) => i.kind === "UNGROUNDED_PRICE")).toBe(true);
   });
@@ -101,7 +107,7 @@ describe("grounding checks", () => {
     const issues = checkGrounding(
       outcome({ recommendationSummary: "Priced at $8,483.20 per unit via the customer price book." }),
       investigated(),
-      KNOWN,
+      CATALOG,
     );
     expect(issues.filter((i) => i.kind === "UNGROUNDED_PRICE")).toHaveLength(0);
   });
@@ -110,7 +116,7 @@ describe("grounding checks", () => {
     const issues = checkGrounding(
       outcome({ recommendationSummary: "Rated to 205 °C per DS-9999 §7.3." }),
       investigated(),
-      KNOWN,
+      CATALOG,
     );
     expect(issues.some((i) => i.kind === "UNGROUNDED_EVIDENCE")).toBe(true);
   });
@@ -119,9 +125,98 @@ describe("grounding checks", () => {
     const issues = checkGrounding(
       outcome({ recommendationSummary: "Rated to 205 °C per DS-1020 §2.1." }),
       investigated(),
-      KNOWN,
+      CATALOG,
     );
     expect(issues.filter((i) => i.kind === "UNGROUNDED_EVIDENCE")).toHaveLength(0);
+  });
+
+  it("does not mistake a document number for a fabricated part number", () => {
+    // DS-1020 is shaped exactly like a SKU. Treating it as one would fail the
+    // happy path every time the agent cited its evidence properly.
+    const issues = checkGrounding(
+      outcome({ recommendationSummary: "Rated to 205 °C per DS-1020 §2.1, which clears this duty." }),
+      investigated(),
+      CATALOG,
+    );
+    expect(issues).toHaveLength(0);
+  });
+
+  it("rejects a token that is neither a part number nor a document", () => {
+    const issues = checkGrounding(
+      outcome({ recommendationSummary: "See ZZ-4321 §1.1 for the rating." }),
+      investigated(),
+      CATALOG,
+    );
+    expect(issues.some((i) => i.kind === "UNKNOWN_SKU" && /ZZ-4321/.test(i.detail))).toBe(true);
+  });
+
+  it("rejects an invented total even when the unit price beside it is real", () => {
+    // The dangerous shape: one true number lending credibility to a false one.
+    const issues = checkGrounding(
+      outcome({
+        recommendationSummary: "Unit price is $8,483.20, so the order comes to $99,999.99 all in.",
+      }),
+      investigated(),
+      CATALOG,
+    );
+    expect(issues.some((i) => i.kind === "UNGROUNDED_PRICE" && /99,999\.99/.test(i.detail))).toBe(true);
+  });
+
+  it("accepts the extended total and list price the engine returned", () => {
+    const issues = checkGrounding(
+      outcome({
+        recommendationSummary: "List is $9,980.00, your price $8,483.20, extended $101,798.40 for the order.",
+      }),
+      investigated(),
+      CATALOG,
+    );
+    expect(issues.filter((i) => i.kind === "UNGROUNDED_PRICE")).toHaveLength(0);
+  });
+
+  it("rejects a stock figure no tool returned, even though inventory was checked", () => {
+    const issues = checkGrounding(
+      outcome({ recommendationSummary: "We have 180 units in stock and can ship immediately." }),
+      investigated(),
+      CATALOG,
+    );
+    expect(issues.some((i) => i.kind === "UNGROUNDED_INVENTORY" && /180/.test(i.detail))).toBe(true);
+  });
+
+  it("accepts the stock figure the inventory tool returned", () => {
+    const issues = checkGrounding(
+      outcome({ recommendationSummary: "15 units are in stock across the network." }),
+      investigated(),
+      CATALOG,
+    );
+    expect(issues.filter((i) => i.kind === "UNGROUNDED_INVENTORY")).toHaveLength(0);
+  });
+
+  it("grades clarification questions, which are drafted to the customer", () => {
+    const issues = checkGrounding(
+      outcome({
+        status: "NEEDS_CUSTOMER_CLARIFICATION",
+        resolvedProduct: null,
+        missingInformation: ["Can you confirm you want the ZX-999 rather than the PX-440?"],
+        recommendationSummary: "We need one detail before quoting this.",
+      }),
+      investigated(),
+      CATALOG,
+    );
+    expect(issues.some((i) => i.kind === "UNKNOWN_SKU" && /ZX-999/.test(i.detail))).toBe(true);
+  });
+
+  it("refuses to send internal commercial language to a customer", () => {
+    const issues = checkGrounding(
+      outcome({
+        status: "NEEDS_CUSTOMER_CLARIFICATION",
+        resolvedProduct: null,
+        missingInformation: ["Could you confirm the volume so we can check our margin on this?"],
+        recommendationSummary: "We need one detail before quoting this.",
+      }),
+      investigated(),
+      CATALOG,
+    );
+    expect(issues.some((i) => i.kind === "INTERNAL_LANGUAGE_LEAK")).toBe(true);
   });
 
   it("flags internal commercial language", () => {

@@ -88,6 +88,31 @@ export class GuardrailTracker {
   }
 
   /**
+   * Has the run run out of budget to execute another tool *right now*?
+   *
+   * Separate from `stopReason` because this is checked inside a turn, between
+   * the individual calls the model asked for in one go. It deliberately does
+   * not consider the turn limit — the current turn is already underway — and
+   * it records at most one event, so refusing the tail of a greedy turn does
+   * not bury the trace in duplicates.
+   */
+  toolBudgetExhausted(): GuardrailEvent | null {
+    if (this.toolCalls >= this.config.maxToolCalls) {
+      return (
+        this.events.find((e) => e.kind === "TOOL_LIMIT") ??
+        this.record("TOOL_LIMIT", `Reached the ${this.config.maxToolCalls}-tool-call limit without concluding.`)
+      );
+    }
+    if (this.now() - this.startedAt > this.config.timeoutMs) {
+      return (
+        this.events.find((e) => e.kind === "TIMEOUT") ??
+        this.record("TIMEOUT", `Run exceeded ${Math.round(this.config.timeoutMs / 1000)}s.`)
+      );
+    }
+    return null;
+  }
+
+  /**
    * Is this call a repeat of one already made with the same arguments?
    *
    * Returns a message for the model rather than a boolean, because telling it

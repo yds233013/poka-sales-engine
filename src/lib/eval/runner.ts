@@ -63,21 +63,52 @@ export interface RunScenarioOptions {
   asOf?: Date;
 }
 
+/** Reference for a throwaway evaluation case. Unique per run. */
+function evalReference(scenarioId: string): string {
+  return `EVAL-${scenarioId.toUpperCase().slice(0, 18)}-${Date.now().toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 6)
+    .toUpperCase()}`;
+}
+
 /**
  * Prepare the case a scenario runs against.
  *
- * Seeded scenarios reuse their existing case. Freeform ones create a throwaway
- * case against a real account, so pricing, freight and history are genuine
- * rather than stubbed.
+ * Every scenario runs against a throwaway case, including the ones that name a
+ * seeded reference — those are *copied*, not reused. Two reasons, both learned
+ * the hard way:
+ *
+ *   - Running an eval re-analyses a case from scratch, which rewrites its
+ *     recommendation, quote and approvals. Pointing that at REQ-2041 means
+ *     clicking "run evals" in the Agent Lab quietly rewrites the case the
+ *     product demos with.
+ *   - Two scenarios that touch the same seeded case become order-dependent,
+ *     and so does any test that asserts against it afterwards.
+ *
+ * The copy carries the same customer, site, contact, subject and body, so the
+ * pricing, freight, history and compatibility it exercises are all genuine.
  */
 export async function prepareScenarioCase(
   prisma: PrismaClient,
   scenario: EvalScenario,
 ): Promise<{ requestId: string; ephemeral: boolean }> {
   if (scenario.reference) {
-    const existing = await prisma.salesRequest.findFirst({ where: { reference: scenario.reference } });
-    if (!existing) throw new Error(`Scenario ${scenario.id} references unseeded case ${scenario.reference}`);
-    return { requestId: existing.id, ephemeral: false };
+    const source = await prisma.salesRequest.findFirst({ where: { reference: scenario.reference } });
+    if (!source) throw new Error(`Scenario ${scenario.id} references unseeded case ${scenario.reference}`);
+    const copy = await prisma.salesRequest.create({
+      data: {
+        reference: evalReference(scenario.id),
+        subject: source.subject,
+        rawBody: source.rawBody,
+        receivedAt: source.receivedAt,
+        channel: source.channel,
+        customerId: source.customerId,
+        siteId: source.siteId,
+        contactId: source.contactId,
+        ownerId: source.ownerId,
+      },
+    });
+    return { requestId: copy.id, ephemeral: true };
   }
   if (!scenario.rfq) throw new Error(`Scenario ${scenario.id} has neither a reference nor an rfq`);
 
@@ -90,7 +121,7 @@ export async function prepareScenarioCase(
 
   const created = await prisma.salesRequest.create({
     data: {
-      reference: `EVAL-${scenario.id.toUpperCase().slice(0, 18)}-${Date.now().toString(36)}`,
+      reference: evalReference(scenario.id),
       subject: scenario.rfq.subject,
       rawBody: scenario.rfq.body,
       receivedAt: new Date(),

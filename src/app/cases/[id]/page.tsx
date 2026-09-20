@@ -324,7 +324,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
                           outputTokens: run.outputTokens,
                           estimatedCostUsd: run.estimatedCostUsd ? Number(run.estimatedCostUsd) : null,
                           guardrailEvents: (run.guardrailEvents as { kind: string; detail: string }[] | null) ?? [],
-                          groundingIssues: [],
+                          groundingIssues: run.groundingIssues,
                         }
                       : null
                   }

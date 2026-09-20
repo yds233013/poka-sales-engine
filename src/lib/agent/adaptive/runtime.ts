@@ -289,6 +289,20 @@ export async function runAdaptiveLoop(
       const results: Anthropic.ToolResultBlockParam[] = [];
 
       for (const use of toolUses) {
+        // Checked per call, not per turn. A single turn can request many tools
+        // at once, so a cap enforced only at the top of the loop would let one
+        // greedy turn run straight past it before anything noticed.
+        const capped = tracker.toolBudgetExhausted();
+        if (capped) {
+          results.push({
+            type: "tool_result",
+            tool_use_id: use.id,
+            is_error: true,
+            content: `Stopped: ${capped.detail}`,
+          });
+          continue;
+        }
+
         tracker.toolCalls += 1;
         const contract = contractFor(use.name);
 

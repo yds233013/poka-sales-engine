@@ -645,6 +645,8 @@ model AgentRun {
   outcome          Json?
   /// Guardrail trips recorded during the run (loop detection, caps, retries).
   guardrailEvents  Json?
+  /// Claims in the agent's summary that no tool supported. Empty on a clean run.
+  groundingIssues  String[]
 
   request   SalesRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
   toolCalls ToolCall[]

@@ -1,7 +1,8 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { db } from "../support/db";
 import { runAdaptiveRequest, AdaptiveUnavailableError } from "@/lib/agent/adaptive";
 import { FakeModelClient, substitutionScript, type ScriptedTurn } from "../support/fake-model";
+import { CaseTracker } from "../support/cases";
 
 /**
  * The adaptive runtime driven by a scripted model.
@@ -12,34 +13,16 @@ import { FakeModelClient, substitutionScript, type ScriptedTurn } from "../suppo
  */
 
 const MODEL = "claude-sonnet-5";
-const created: string[] = [];
+const cases = new CaseTracker(db);
 
-async function caseId(reference: string): Promise<string> {
-  const request = await db.salesRequest.findFirstOrThrow({ where: { reference } });
-  return request.id;
-}
+/**
+ * A copy of a seeded case. Never the seeded case itself — running one rewrites
+ * its quote and approvals, and the scenario suite asserts against those.
+ */
+const caseId = (reference: string) => cases.clone(reference);
 
-async function ephemeralCase(subject: string, body: string, accountNumber = "ACC-10044"): Promise<string> {
-  const customer = await db.customer.findFirstOrThrow({
-    where: { accountNumber },
-    include: { sites: true, contacts: true },
-  });
-  const owner = await db.user.findFirstOrThrow({ where: { role: "SALES_REP" } });
-  const request = await db.salesRequest.create({
-    data: {
-      reference: `ADP-${Date.now()}-${created.length}`,
-      subject,
-      rawBody: body,
-      receivedAt: new Date(),
-      customerId: customer.id,
-      siteId: customer.sites[0]?.id ?? null,
-      contactId: customer.contacts[0]?.id ?? null,
-      ownerId: owner.id,
-    },
-  });
-  created.push(request.id);
-  return request.id;
-}
+const ephemeralCase = (subject: string, body: string, accountNumber = "ACC-10044") =>
+  cases.create("ADP", subject, body, accountNumber);
 
 function run(requestId: string, script: ScriptedTurn[], options: { failOnTurn?: number } = {}) {
   return runAdaptiveRequest(db, requestId, {
@@ -48,17 +31,12 @@ function run(requestId: string, script: ScriptedTurn[], options: { failOnTurn?: 
   });
 }
 
-beforeAll(async () => {
-  // These tests rewrite seeded cases; restore them afterwards.
-});
-
 afterEach(async () => {
-  if (created.length > 0) {
-    await db.salesRequest.deleteMany({ where: { id: { in: created.splice(0) } } });
-  }
+  await cases.cleanup();
 });
 
 afterAll(async () => {
+  await cases.cleanup();
   await db.$disconnect();
 });
 
@@ -231,13 +209,23 @@ describe("agent mutation safety", () => {
       },
     ]);
 
-    // The first attempt was refused; the run only concluded once a viable
-    // candidate was included, and the quoted part is the viable one.
-    const quote = await db.quote.findFirst({
+    // The refusal is asserted directly rather than inferred from the end
+    // state: the run must record *why* the first draft was rejected.
+    const run1 = await db.agentRun.findUniqueOrThrow({ where: { id: result.runId } });
+    const events = (run1.guardrailEvents ?? []) as { kind: string; detail: string }[];
+    expect(
+      events.some((e) => e.kind === "FORBIDDEN_EFFECT" && /AX-220/.test(e.detail) && /hard/i.test(e.detail)),
+    ).toBe(true);
+
+    // The run only concluded once a viable candidate was included, and the
+    // quoted part is the viable one. `findFirstOrThrow` so a missing quote
+    // fails as a missing quote rather than as a TypeError three lines later.
+    const quote = await db.quote.findFirstOrThrow({
       where: { requestId: id },
       include: { items: { include: { product: true } } },
     });
-    expect(quote?.items[0].product.sku).toBe("PX-440");
+    expect(quote.items.map((i) => i.product.sku)).toContain("PX-440");
+    expect(quote.items.map((i) => i.product.sku)).not.toContain("AX-220");
     expect(result.termination).toBe("READY_FOR_APPROVAL");
   });
 

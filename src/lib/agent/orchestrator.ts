@@ -70,6 +70,12 @@ export interface RunOutcome {
   recommendationId: string | null;
   quoteId: string | null;
   approvalCount: number;
+  /**
+   * True when every policy check was inside limits, so the quote may be
+   * released without a human decision. Set whether or not the release actually
+   * happened — see `deferAutoRelease`.
+   */
+  autoReleaseEligible?: boolean;
 }
 
 export async function runSalesRequest(
@@ -277,6 +283,15 @@ export interface FinalizeInput {
   candidateSources: SubstituteCandidate[];
   openQuestions: string[];
   manualDiscountPct?: number | null;
+  /**
+   * Hold the automatic release back and hand the decision to the caller.
+   *
+   * The adaptive path sets this because auto-release would otherwise happen
+   * *before* the agent's summary has been grounding-checked, releasing a quote
+   * on the strength of a narrative that is about to be rejected. The quote and
+   * its approvals are still the finalizer's; only the release timing moves.
+   */
+  deferAutoRelease?: boolean;
   asOf: Date;
 }
 
@@ -568,7 +583,7 @@ export async function finalizeCase(
     // the gate, the quote status and the audit entry, and having a second path
     // that sets those by hand is how the two drift apart.
     const autoRelease = canAutoRelease(approvals);
-    if (autoRelease) {
+    if (autoRelease && !input.deferAutoRelease) {
       const { releaseQuote } = await import("@/lib/workflow");
       await releaseQuote(prisma, requestId, {
         actor: "Poka Sales Engine",
@@ -577,8 +592,9 @@ export async function finalizeCase(
       });
     }
 
-    await finishRun(prisma, runId, bus, startedAt, "COMPLETED");
-    const status = autoRelease ? "RESPONSE_READY" : "READY_FOR_APPROVAL";
+    const released = autoRelease && !input.deferAutoRelease;
+    if (!input.deferAutoRelease) await finishRun(prisma, runId, bus, startedAt, "COMPLETED");
+    const status = released ? "RESPONSE_READY" : "READY_FOR_APPROVAL";
 
     return {
       runId,
@@ -586,6 +602,7 @@ export async function finalizeCase(
       recommendationId: recommendation.id,
       quoteId: quote.id,
       approvalCount: approvals.length,
+      autoReleaseEligible: autoRelease,
     };
 }
 

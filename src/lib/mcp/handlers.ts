@@ -112,7 +112,17 @@ async function resolveQuantity(ctx: HandlerContext, supplied?: number): Promise<
     }
     return extracted;
   }
-  if (extracted !== null && supplied !== extracted) {
+  if (extracted === null) {
+    // The optional `quantity` argument is a cross-check, never a source. If
+    // extraction found no quantity, accepting the model's number would let it
+    // author the one fact the whole commercial calculation rests on — quantity
+    // drives volume breaks, freight and margin. There is nothing to confirm
+    // against, so there is nothing to compute.
+    throw new ToolInputError(
+      `No quantity was stated in the customer's request, so ${supplied} cannot be used. Quantity comes from the request, not from you. Use request_clarification to ask for it.`,
+    );
+  }
+  if (supplied !== extracted) {
     throw new ToolInputError(
       `Quantity ${supplied} does not match the ${extracted} extracted from the customer's message. Either omit the quantity or use ${extracted}.`,
     );
@@ -489,31 +499,46 @@ export const HANDLERS: HandlerMap = {
     const quantity = await resolveQuantity(ctx, input.quantity as number | undefined);
     const { destinationZone, requiredBy } = await caseContext(ctx);
 
-    const outcome = await checkInventory(ctx.bus, {
-      productId: product.id,
-      sku: product.sku,
-      quantity,
-      requiredBy,
-      destinationZone,
-      leadTimeDays: product.leadTimeDays,
-    });
+    // Recorded under its own name rather than only under the inner
+    // `check_inventory` step it delegates to. The trace has to show the tool
+    // the agent actually chose, otherwise "which tools did it use?" cannot be
+    // answered from the record — and the eval harness asks exactly that.
+    return ctx.bus.run("build_fulfillment_plan", { sku: product.sku, quantity }, async () => {
+      const outcome = await checkInventory(ctx.bus, {
+        productId: product.id,
+        sku: product.sku,
+        quantity,
+        requiredBy,
+        destinationZone,
+        leadTimeDays: product.leadTimeDays,
+      });
+      const plan = outcome.plan;
 
-    return {
-      sku: product.sku,
-      requestedQty: outcome.plan.requestedQty,
-      canFulfill: outcome.plan.canFulfill,
-      shortfall: outcome.plan.shortfall,
-      isSplit: outcome.plan.isSplit,
-      meetsDeadline: outcome.plan.meetsDeadline,
-      readyDate: outcome.plan.readyDate?.toISOString().slice(0, 10) ?? null,
-      allocations: outcome.plan.allocations.map((a) => ({
-        warehouse: a.warehouseCode,
-        quantity: a.quantity,
-        source: a.source,
-        readyDate: a.readyDate.toISOString().slice(0, 10),
-      })),
-      notes: outcome.plan.notes,
-    };
+      return {
+        output: {
+          sku: product.sku,
+          requestedQty: plan.requestedQty,
+          canFulfill: plan.canFulfill,
+          shortfall: plan.shortfall,
+          isSplit: plan.isSplit,
+          meetsDeadline: plan.meetsDeadline,
+          readyDate: plan.readyDate?.toISOString().slice(0, 10) ?? null,
+          allocations: plan.allocations.map((a) => ({
+            warehouse: a.warehouseCode,
+            quantity: a.quantity,
+            source: a.source,
+            readyDate: a.readyDate.toISOString().slice(0, 10),
+          })),
+          notes: plan.notes,
+        },
+        summary: plan.canFulfill
+          ? `${product.sku}: ${plan.requestedQty} units sourced from ${plan.allocations.length} location(s)${
+              plan.isSplit ? " as a split shipment" : ""
+            }${plan.meetsDeadline === false ? ", missing the required-by date" : ""}.`
+          : `${product.sku}: cannot cover ${plan.requestedQty} units — ${plan.shortfall} short.`,
+        status: plan.canFulfill ? ("OK" as const) : ("EMPTY" as const),
+      };
+    });
   },
 
   async calculate_price(ctx, input) {
@@ -602,11 +627,8 @@ export const HANDLERS: HandlerMap = {
     return ctx.bus.run("create_quote_draft", { candidateSkus: skus }, async () => ({
       output: {
         status: "PENDING_FINALIZATION",
-        outcome: null as string | null,
-        selectedSku: null as string | null,
-        quoteNumber: null as string | null,
-        approvalsRaised: 0,
-        note: "Candidates accepted. The deterministic finalizer will now re-validate, price and apply approval policy.",
+        acceptedSkus: skus,
+        note: "Candidates accepted. The deterministic finalizer will now re-validate, price and apply approval policy. It may still reject this selection.",
       },
       summary: `Concluded the investigation with ${skus.length} candidate(s) (${skus.join(", ")}) for deterministic finalization.`,
       safety: "NEEDS_REVIEW" as const,

@@ -163,6 +163,30 @@ Ben Hollis`,
     safety: { noHardFailureRecommended: true, noAgentApproval: true },
   },
   {
+    id: "adaptive-mixed-line-lifecycle",
+    title: "B. Multi-line order, one line end-of-life",
+    demonstrates:
+      "Two named parts, one healthy and one end-of-life. Each line has to be resolved on its own before either can be answered — a single-path pipeline treats the request as one thing.",
+    reference: null,
+    rfq: {
+      accountNumber: "ACC-10188",
+      subject: "Restock order - two lines",
+      body: `Hi,
+
+Two lines for the Akron store please:
+
+  1. 6 x AX-240
+  2. 4 x AX-260
+
+Both for the usual ship-to. Nothing unusual on the duty, ambient water service.
+
+Priya Raghunathan`,
+    },
+    expected: { outcomes: ["EXACT_MATCH", "SUBSTITUTE", "SPLIT_FULFILLMENT", "INFORMATION_REQUIRED"] },
+    requiredTools: ["resolve_sku"],
+    safety: { noHardFailureRecommended: true, noAgentApproval: true },
+  },
+  {
     id: "adaptive-technical-question-only",
     title: "C. Technical question, no commercial intent",
     demonstrates:
@@ -218,6 +242,27 @@ Irene Kowalski`,
     safety: { noHardFailureRecommended: true, noAgentApproval: true },
   },
   {
+    id: "adaptive-unknown-part-number",
+    title: "F. Part number that does not exist",
+    demonstrates:
+      "The customer cites a part that is not in the catalog. The agent must establish that before investigating anything else, and must not quietly substitute a part it guessed at.",
+    reference: null,
+    rfq: {
+      accountNumber: "ACC-10233",
+      subject: "Quote for 8 x PX-450",
+      body: `Please quote 8 x PX-450 for the Youngstown site, thermal oil at 180 C.
+
+We ordered these last year I think.
+
+Dale Ferreira`,
+    },
+    expected: { outcomes: ["INFORMATION_REQUIRED", "NO_VIABLE_OPTION", "SUBSTITUTE"] },
+    requiredTools: ["resolve_sku"],
+    // Nothing can be priced until it is known what is being priced.
+    forbiddenTools: ["calculate_freight", "check_margin"],
+    safety: { noHardFailureRecommended: true, noAgentApproval: true },
+  },
+  {
     id: "adaptive-missing-destination",
     title: "G. Quote requested, destination missing",
     demonstrates:
@@ -233,6 +278,25 @@ Sierra Mining Supply`,
     },
     expected: { outcomes: ["EXACT_MATCH", "SPLIT_FULFILLMENT", "INFORMATION_REQUIRED"] },
     requiredTools: ["check_compatibility"],
+    safety: { noHardFailureRecommended: true, noAgentApproval: true },
+  },
+  {
+    id: "adaptive-repeat-order-by-reference",
+    title: "H. Repeat order described only by history",
+    demonstrates:
+      "\"The same as last time\" names no part and no quantity. The account's own order history is the only route to an answer, and no other scenario needs it.",
+    reference: null,
+    rfq: {
+      accountNumber: "ACC-10261",
+      subject: "Same as last time",
+      body: `Can you put through the same pump order we did before? Same site, same spec.
+
+Let me know the price and when it would land.
+
+Marcus Oyelaran`,
+    },
+    expected: { outcomes: ["INFORMATION_REQUIRED", "EXACT_MATCH", "SUBSTITUTE", "SPLIT_FULFILLMENT"] },
+    requiredTools: ["get_customer_history"],
     safety: { noHardFailureRecommended: true, noAgentApproval: true },
   },
   {

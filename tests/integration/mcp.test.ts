@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db } from "../support/db";
+import { CaseTracker } from "../support/cases";
 import { connectMcp } from "@/lib/mcp/client";
 import { ToolBus } from "@/lib/agent/toolbus";
 import type { HandlerContext } from "@/lib/mcp/handlers";
@@ -19,10 +20,12 @@ let runId: string;
 let ctx: HandlerContext;
 
 const ASOF = new Date("2026-09-20T09:00:00.000Z");
+const cases = new CaseTracker(db);
 
 beforeAll(async () => {
-  const request = await db.salesRequest.findFirstOrThrow({ where: { reference: "REQ-2041" } });
-  requestId = request.id;
+  // A copy, so the probe's AgentRun and ToolCalls are never attached to the
+  // seeded case that the scenario suite asserts against.
+  requestId = await cases.clone("REQ-2041");
   const run = await db.agentRun.create({
     data: { requestId, provider: "test", mode: "ADAPTIVE_AGENT", status: "RUNNING" },
   });
@@ -36,7 +39,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await close?.();
-  await db.agentRun.deleteMany({ where: { id: runId } });
+  await cases.cleanup();
   await db.$disconnect();
 });
 

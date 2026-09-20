@@ -43,8 +43,8 @@ import {
   type ModelClient,
   type AdaptiveRunOptions,
 } from "./runtime";
-import { agentOutcomeSchema, checkGrounding, type AgentOutcome } from "./outcome";
-import type { TerminationStatus } from "./state";
+import { agentOutcomeSchema, checkGrounding, type AgentOutcome, type GroundingCatalog } from "./outcome";
+import { narrateState, type TerminationStatus } from "./state";
 
 const PRODUCT_INCLUDE = { category: true, specs: true } as const;
 
@@ -117,8 +117,9 @@ export async function runAdaptiveRequest(
 
   try {
     // ── 1. Deterministic extraction — the grounding anchor ─────────────────
-    const [knownSkuRows, sites] = await Promise.all([
+    const [knownSkuRows, knownDocRows, sites] = await Promise.all([
       prisma.product.findMany({ select: { sku: true } }),
+      prisma.technicalDocument.findMany({ select: { docNumber: true } }),
       prisma.customerSite.findMany({ select: { id: true, name: true, aliases: true, city: true } }),
     ]);
 
@@ -165,7 +166,17 @@ export async function runAdaptiveRequest(
       bodyText: `${request.subject}\n${request.rawBody}`,
     });
 
-    const knownSkus = new Set(knownSkuRows.map((r) => r.sku));
+    // The resolved site and contact belong on the case whichever mode produced
+    // them; the earlier update only had the extractor's site guess to work with.
+    await prisma.salesRequest.update({
+      where: { id: requestId },
+      data: { siteId: account.siteId, contactId: account.contactId },
+    });
+
+    const catalog: GroundingCatalog = {
+      skus: new Set(knownSkuRows.map((r) => r.sku)),
+      documents: new Set(knownDocRows.map((r) => r.docNumber)),
+    };
     const quantityReq = requirements.find((r) => r.key === "quantity");
     const quantity = quantityReq?.kind === "EXPLICIT" ? Number(quantityReq.numValue) : null;
 
@@ -183,7 +194,7 @@ export async function runAdaptiveRequest(
       analysis,
       asOf,
       startedAt,
-      knownSkus,
+      catalog,
       model,
     });
 
@@ -234,7 +245,7 @@ interface ConcludeArgs {
   analysis: { openQuestions: string[] };
   asOf: Date;
   startedAt: number;
-  knownSkus: Set<string>;
+  catalog: GroundingCatalog;
   model: string;
 }
 
@@ -265,9 +276,13 @@ async function concludeRun(args: ConcludeArgs): Promise<AdaptiveOutcome> {
         outputTokens: result.outputTokens,
         estimatedCostUsd: estimateCostUsd(args.model, result.inputTokens, result.outputTokens),
         guardrailEvents: result.guardrailEvents as unknown as object,
+        groundingIssues,
         outcome: outcome ? (outcome as unknown as object) : undefined,
         errorCategory: result.errorCategory,
         error: result.error,
+        // Derived from investigation state, so it can only describe work a
+        // tool actually did. Not a post-hoc narration of the run.
+        trace: narrateState(result.state) as unknown as object,
       },
     });
     if (groundingIssues.length > 0) {
@@ -327,8 +342,15 @@ async function concludeRun(args: ConcludeArgs): Promise<AdaptiveOutcome> {
       missingInformation: payload.questions,
       selected: null,
     });
-    const issues = validate(outcome, result, args.knownSkus);
-    await persistMeta("NEEDS_CUSTOMER_CLARIFICATION", issues, outcome);
+    const issues = validate(outcome, result, args.catalog);
+
+    // These questions get drafted into a letter to the customer. If any of
+    // them carries a claim no tool supported — an invented part number, a
+    // price, internal margin language — the agent's wording is dropped
+    // entirely and the case goes to a person. Escalate, do not guess.
+    const trusted = issues.length === 0;
+    const termination: TerminationStatus = trusted ? "NEEDS_CUSTOMER_CLARIFICATION" : "NEEDS_INTERNAL_REVIEW";
+    await persistMeta(termination, issues, outcome);
 
     const finishedOutcome = await finishAsInformationRequired(
       prisma,
@@ -337,14 +359,25 @@ async function concludeRun(args: ConcludeArgs): Promise<AdaptiveOutcome> {
       requestId,
       provider,
       account,
-      [...payload.questions, ...args.analysis.openQuestions],
+      trusted ? [...payload.questions, ...args.analysis.openQuestions] : args.analysis.openQuestions,
       [],
       request.subject,
       args.startedAt,
     );
+    if (!trusted) {
+      await prisma.salesRequest.update({
+        where: { id: requestId },
+        data: {
+          status: "NEEDS_REVIEW",
+          risk: "HIGH",
+          blockedReason: `The agent's clarification questions contained ${issues.length} unsupported claim(s) and were withheld: ${issues[0]}`,
+        },
+      });
+    }
     return {
       ...finishedOutcome,
-      termination: "NEEDS_CUSTOMER_CLARIFICATION",
+      status: trusted ? finishedOutcome.status : "NEEDS_REVIEW",
+      termination,
       agentOutcome: outcome,
       groundingIssues: issues,
       toolSequence,
@@ -361,10 +394,42 @@ async function concludeRun(args: ConcludeArgs): Promise<AdaptiveOutcome> {
       missingInformation: [],
       selected: null,
     });
-    const issues = validate(outcome, result, args.knownSkus);
+    const issues = validate(outcome, result, args.catalog);
     await persistMeta("NEEDS_INTERNAL_REVIEW", issues, outcome);
 
     const blockedSkus = result.state.compatibility.filter((c) => c.safety === "BLOCKED");
+
+    // `escalate_for_review` is classified HUMAN_GATED_MUTATION, and that has to
+    // be literally true: the escalation raises a pending approval that a named
+    // role must decide. Marking the case BLOCKED and leaving it in nobody's
+    // queue would make the classification decorative.
+    await prisma.approval.create({
+      data: {
+        requestId,
+        kind: "TECHNICAL_UNCERTAINTY",
+        status: "PENDING",
+        requiredRole: "APPLICATION_ENGINEER",
+        title: "Specialist review requested by the adaptive agent",
+        reason: payload.reason.slice(0, 900),
+        proposedAction:
+          "Review the investigation and decide whether this can be met from catalog product, a special, or not at all.",
+        commercialImpact: "No quotation was produced; nothing has been offered to the customer.",
+        technicalImpact:
+          blockedSkus.length > 0
+            ? `${blockedSkus.length} candidate(s) failed a hard requirement: ${blockedSkus
+                .map((c) => `${c.sku} (${c.hardFailures.map((f) => f.dimension).join(", ")})`)
+                .join("; ")}`
+            : "No candidate could be established as safe from the evidence gathered.",
+        riskNote:
+          "Escalated rather than answered. The agent did not decide this and cannot: only a named engineer can.",
+        context: {
+          blockingDimensions: payload.blockingDimensions ?? [],
+          candidatesEvaluated: result.state.compatibility.map((c) => ({ sku: c.sku, safety: c.safety })),
+        } as object,
+        requestedById: request.ownerId,
+      },
+    });
+
     await prisma.recommendation.create({
       data: {
         requestId,
@@ -389,6 +454,12 @@ async function concludeRun(args: ConcludeArgs): Promise<AdaptiveOutcome> {
       },
     });
     await recordAudit(prisma, requestId, {
+      type: "APPROVAL_REQUESTED",
+      actor: "Poka Sales Engine",
+      summary: "Specialist review requested by the adaptive agent",
+      detail: { kind: "TECHNICAL_UNCERTAINTY", requiredRole: "APPLICATION_ENGINEER" },
+    });
+    await recordAudit(prisma, requestId, {
       type: "RECOMMENDATION_BLOCKED",
       actor: "Poka Sales Engine",
       summary: payload.reason.slice(0, 200),
@@ -399,7 +470,7 @@ async function concludeRun(args: ConcludeArgs): Promise<AdaptiveOutcome> {
       status: "BLOCKED",
       recommendationId: null,
       quoteId: null,
-      approvalCount: 0,
+      approvalCount: 1,
       termination: "NEEDS_INTERNAL_REVIEW",
       agentOutcome: outcome,
       groundingIssues: issues,
@@ -430,6 +501,10 @@ async function concludeRun(args: ConcludeArgs): Promise<AdaptiveOutcome> {
       destinationZone: account.siteZone ?? "MIDWEST",
       candidateSources,
       openQuestions: args.analysis.openQuestions,
+      // Grounding has not run yet. Releasing here would put a quote in front
+      // of a customer on the strength of a summary that is about to be
+      // rejected, so the decision comes back to us below.
+      deferAutoRelease: true,
       asOf: args.asOf,
     },
     args.startedAt,
@@ -466,7 +541,7 @@ async function concludeRun(args: ConcludeArgs): Promise<AdaptiveOutcome> {
   const issues = validate(
     { ...outcome, recommendationSummary: payload.rationale },
     result,
-    args.knownSkus,
+    args.catalog,
   );
   await persistMeta(issues.length > 0 ? "NEEDS_INTERNAL_REVIEW" : "READY_FOR_APPROVAL", issues, outcome);
 
@@ -474,6 +549,11 @@ async function concludeRun(args: ConcludeArgs): Promise<AdaptiveOutcome> {
   // to a person, because a recommendation nobody can trace is worth less than
   // none. The quote and approvals the finalizer produced still stand; they were
   // never the model's to make.
+  //
+  // This is also where the held-back release is decided. A clean run that was
+  // inside every policy limit releases exactly as the deterministic pipeline
+  // would; a run with an unsupported claim keeps the quote in draft.
+  let status = finished.status;
   if (issues.length > 0) {
     await prisma.salesRequest.update({
       where: { id: requestId },
@@ -483,11 +563,21 @@ async function concludeRun(args: ConcludeArgs): Promise<AdaptiveOutcome> {
         blockedReason: `The agent's summary contained ${issues.length} claim(s) no tool supported: ${issues[0]}`,
       },
     });
+    status = "NEEDS_REVIEW";
+  } else if (finished.autoReleaseEligible) {
+    const { releaseQuote } = await import("@/lib/workflow");
+    await releaseQuote(prisma, requestId, {
+      actor: "Poka Sales Engine",
+      asOf: args.asOf,
+      note: "Released without approval — every policy check was inside limits and the agent's summary was fully grounded.",
+    });
+    status = "RESPONSE_READY";
   }
+  await finishRun(prisma, run.id, bus, args.startedAt, "COMPLETED");
 
   return {
     ...finished,
-    status: issues.length > 0 ? "NEEDS_REVIEW" : finished.status,
+    status,
     termination: issues.length > 0 ? "NEEDS_INTERNAL_REVIEW" : "READY_FOR_APPROVAL",
     agentOutcome: outcome,
     groundingIssues: issues,
@@ -550,8 +640,8 @@ function buildOutcome(
   };
 }
 
-function validate(outcome: AgentOutcome, result: AdaptiveResult, knownSkus: Set<string>): string[] {
-  return checkGrounding(outcome, result.state, knownSkus).map((i) => `${i.kind}: ${i.detail}`);
+function validate(outcome: AgentOutcome, result: AdaptiveResult, catalog: GroundingCatalog): string[] {
+  return checkGrounding(outcome, result.state, catalog).map((i) => `${i.kind}: ${i.detail}`);
 }
 
 /**

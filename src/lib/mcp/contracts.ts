@@ -66,7 +66,7 @@ const quantityInput = z
   .positive()
   .max(100_000)
   .describe(
-    "Units required. Omit to use the quantity extracted from the customer's message. If you pass a different number the tool will refuse and tell you what was extracted.",
+    "Optional confirmation of the quantity already extracted from the customer's message — not a way to supply one. Omit it and the extracted quantity is used. Pass a different number, or pass one when the message stated none, and the tool refuses.",
   );
 
 // ───────────────────────────── tool definitions ────────────────────────────
@@ -376,14 +376,11 @@ export const TOOL_CONTRACTS = {
         .max(1200)
         .describe("Why these candidates, in plain operational English. No internal cost or margin figures."),
     }),
-    output: z.object({
-      status: z.string(),
-      outcome: z.string().nullable(),
-      selectedSku: z.string().nullable(),
-      quoteNumber: z.string().nullable(),
-      approvalsRaised: z.number(),
-      note: z.string(),
-    }),
+    // Deliberately narrow. Finalization happens after the investigation loop
+    // ends, so this tool cannot report an outcome, a selected part, a quote
+    // number or an approval count — and a schema that promised those would be
+    // describing fields that are structurally always empty.
+    output: z.object({ status: z.string(), acceptedSkus: z.array(z.string()), note: z.string() }),
   },
 
   request_clarification: {

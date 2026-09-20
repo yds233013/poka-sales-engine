@@ -51,9 +51,29 @@ export const investigationStateSchema = z.object({
   compatibility: z.array(compatibilityFindingSchema),
   inventoryChecked: z.array(z.object({ sku: z.string(), totalAvailable: z.number() })),
   fulfillmentPlans: z.array(
-    z.object({ sku: z.string(), canFulfill: z.boolean(), isSplit: z.boolean(), meetsDeadline: z.boolean().nullable() }),
+    z.object({
+      sku: z.string(),
+      canFulfill: z.boolean(),
+      isSplit: z.boolean(),
+      meetsDeadline: z.boolean().nullable(),
+      allocatedQty: z.number(),
+    }),
   ),
-  pricesCalculated: z.array(z.object({ sku: z.string(), unitPrice: z.string(), source: z.string() })),
+  /**
+   * Every money figure the pricing engine returned, not just the winner. An
+   * outcome may legitimately mention the list price it discounted from or the
+   * extended total, and grounding has to be able to recognise those.
+   */
+  pricesCalculated: z.array(
+    z.object({
+      sku: z.string(),
+      unitPrice: z.string(),
+      source: z.string(),
+      listPrice: z.string(),
+      extended: z.string(),
+      considered: z.array(z.string()),
+    }),
+  ),
   /** Document sections retrieved, as `DS-1020 §2.1`. */
   evidenceCited: z.array(z.string()),
   openQuestions: z.array(z.string()),
@@ -192,6 +212,7 @@ export function applyToolResult(
           canFulfill: read<boolean>("canFulfill") ?? false,
           isSplit: read<boolean>("isSplit") ?? false,
           meetsDeadline: read<boolean | null>("meetsDeadline") ?? null,
+          allocatedQty: Math.max(0, (read<number>("requestedQty") ?? 0) - (read<number>("shortfall") ?? 0)),
         },
       ];
       break;
@@ -201,7 +222,14 @@ export function applyToolResult(
       if (!sku) break;
       next.pricesCalculated = [
         ...next.pricesCalculated.filter((p) => p.sku !== sku),
-        { sku, unitPrice: read<string>("unitPrice") ?? "", source: read<string>("priceSource") ?? "" },
+        {
+          sku,
+          unitPrice: read<string>("unitPrice") ?? "",
+          source: read<string>("priceSource") ?? "",
+          listPrice: read<string>("listPrice") ?? "",
+          extended: read<string>("extended") ?? "",
+          considered: (read<{ unitPrice: string }[]>("considered") ?? []).map((c) => c.unitPrice),
+        },
       ];
       break;
     }
@@ -243,14 +271,22 @@ export function canDraftQuote(
       reason: `Compatibility has not been checked for ${unchecked.join(", ")}. Every candidate must go through check_compatibility before it can be quoted.`,
     };
   }
-  const viable = candidateSkus.filter(
-    (sku) => !state.compatibility.find((c) => c.sku === sku && c.safety === "BLOCKED"),
+  const blocked = candidateSkus.filter((sku) =>
+    state.compatibility.some((c) => c.sku === sku && c.safety === "BLOCKED"),
   );
-  if (viable.length === 0) {
+  if (blocked.length === candidateSkus.length) {
+    // Naming the parts and the dimensions they failed on is what lets the
+    // model recover — and it is what makes the refusal legible in the trace.
+    const detail = blocked
+      .map((sku) => {
+        const finding = state.compatibility.find((c) => c.sku === sku);
+        const dimensions = finding?.hardFailures.map((f) => f.dimension).join(", ");
+        return dimensions ? `${sku} (${dimensions})` : sku;
+      })
+      .join("; ");
     return {
       ok: false,
-      reason:
-        "Every candidate failed a hard compatibility requirement. Nothing here can be quoted — use escalate_for_review.",
+      reason: `Every candidate failed a hard compatibility requirement — ${detail}. Nothing here can be quoted. Find another candidate, or use escalate_for_review.`,
     };
   }
   return { ok: true };
