@@ -21,6 +21,15 @@ const OPEN_STATUSES = ["NEW", "ANALYZING", "NEEDS_REVIEW", "READY_FOR_APPROVAL",
  */
 const NOT_EVAL = { NOT: { reference: { startsWith: "EVAL-" } } };
 
+/** The two numbers the sidebar shows: open requests and undecided approvals. */
+export async function getShellCounts(): Promise<{ open: number; approvals: number }> {
+  const [open, approvals] = await Promise.all([
+    prisma.salesRequest.count({ where: { ...NOT_EVAL, status: { in: [...OPEN_STATUSES] } } }),
+    prisma.approval.count({ where: { status: { in: ["PENDING", "CHANGES_REQUESTED"] }, request: NOT_EVAL } }),
+  ]);
+  return { open, approvals };
+}
+
 export async function getDashboard() {
   const [requests, approvals, quotes, runs] = await Promise.all([
     prisma.salesRequest.findMany({
@@ -45,6 +54,27 @@ export async function getDashboard() {
       select: { durationMs: true },
     }),
   ]);
+
+  // What the engine has done most recently, in either mode — the dashboard's
+  // answer to "what has the agent been handling?". Real runs only.
+  const recentRuns = await prisma.agentRun.findMany({
+    where: { request: NOT_EVAL },
+    orderBy: { startedAt: "desc" },
+    take: 6,
+    include: {
+      request: {
+        select: {
+          id: true,
+          reference: true,
+          subject: true,
+          status: true,
+          customer: { select: { name: true } },
+          recommendations: { orderBy: { createdAt: "desc" }, take: 1, select: { outcome: true } },
+        },
+      },
+      _count: { select: { toolCalls: true } },
+    },
+  });
 
   const open = requests.filter((r) => (OPEN_STATUSES as readonly string[]).includes(r.status));
   const needsReview = requests.filter((r) => r.status === "NEEDS_REVIEW" || r.status === "BLOCKED");
@@ -73,6 +103,7 @@ export async function getDashboard() {
   return {
     requests,
     approvals,
+    recentRuns,
     metrics: {
       openCount: open.length,
       needsReviewCount: needsReview.length,

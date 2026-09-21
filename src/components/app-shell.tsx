@@ -2,77 +2,196 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { cn } from "@/lib/cn";
 import type { ReactNode } from "react";
+import {
+  LayoutDashboard,
+  Inbox,
+  ShieldCheck,
+  Package,
+  BookOpen,
+  Building2,
+  Waypoints,
+  ClipboardCheck,
+  type LucideIcon,
+} from "lucide-react";
+import { cn } from "@/lib/cn";
 
-const NAV = [
-  { href: "/", label: "Dashboard", match: (p: string) => p === "/" },
-  { href: "/inbox", label: "Request inbox", match: (p: string) => p.startsWith("/inbox") || p.startsWith("/cases") },
-  { href: "/approvals", label: "Approvals", match: (p: string) => p.startsWith("/approvals") },
-  { href: "/catalog", label: "Catalog", match: (p: string) => p.startsWith("/catalog") },
-  { href: "/library", label: "Technical library", match: (p: string) => p.startsWith("/library") },
-  { href: "/customers", label: "Accounts", match: (p: string) => p.startsWith("/customers") },
-  { href: "/agent-lab", label: "Agent lab", match: (p: string) => p.startsWith("/agent-lab") },
+interface NavItem {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  match: (path: string) => boolean;
+  count?: "open" | "approvals";
+}
+
+/**
+ * Three groups, because the product has three kinds of work: operating the
+ * desk, looking things up, and inspecting the agent. Mixing them in one flat
+ * row made the engineering surfaces look like part of a salesperson's day.
+ */
+const GROUPS: { label: string; items: NavItem[] }[] = [
+  {
+    label: "Operations",
+    items: [
+      { href: "/", label: "Overview", icon: LayoutDashboard, match: (p) => p === "/" },
+      {
+        href: "/inbox",
+        label: "Requests",
+        icon: Inbox,
+        match: (p) => p.startsWith("/inbox") || p.startsWith("/cases") || p.startsWith("/quotes"),
+        count: "open",
+      },
+      { href: "/approvals", label: "Approvals", icon: ShieldCheck, match: (p) => p.startsWith("/approvals"), count: "approvals" },
+    ],
+  },
+  {
+    label: "Reference",
+    items: [
+      { href: "/catalog", label: "Catalog", icon: Package, match: (p) => p.startsWith("/catalog") },
+      { href: "/library", label: "Technical library", icon: BookOpen, match: (p) => p.startsWith("/library") },
+      { href: "/customers", label: "Accounts", icon: Building2, match: (p) => p.startsWith("/customers") },
+    ],
+  },
+  {
+    label: "Agent",
+    items: [
+      { href: "/agent-lab", label: "Agent lab", icon: Waypoints, match: (p) => p.startsWith("/agent-lab") },
+      { href: "/evaluations", label: "Evaluations", icon: ClipboardCheck, match: (p) => p.startsWith("/evaluations") },
+    ],
+  },
 ];
 
 export function AppShell({
   children,
-  provider,
   adaptiveModel,
+  counts,
 }: {
   children: ReactNode;
-  provider: { id: string; label: string; remote: boolean; note: string };
   /** Model name when a provider is configured, null when running offline. */
   adaptiveModel: string | null;
+  counts: { open: number; approvals: number };
 }) {
   const pathname = usePathname() ?? "/";
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="no-print sticky top-0 z-30 flex h-12 shrink-0 items-center gap-6 border-b border-[var(--hairline)] bg-white px-4">
-        <Link href="/" className="flex items-baseline gap-2.5">
-          <span className="flex size-5 items-center justify-center rounded-[3px] bg-ink-900 text-[10px] font-bold text-white">
+    <div className="flex h-full">
+      {/* Full sidebar from 1280px; an icon rail below that, so a 1024px laptop
+          keeps enough width for the two-column case workspace. */}
+      <aside className="no-print flex w-[60px] shrink-0 flex-col border-r border-[var(--rail-hairline)] bg-[var(--rail)] xl:w-[228px]">
+        <Link
+          href="/"
+          className="flex h-14 items-center gap-2.5 border-b border-[var(--rail-hairline)] px-[18px] xl:px-4"
+          title="Poka Sales Engine — Technical Sales Operations"
+        >
+          <span className="flex size-6 shrink-0 items-center justify-center rounded-[5px] bg-white text-[11px] font-bold tracking-tight text-[var(--rail)]">
             P
           </span>
-          <span className="text-[13.5px] font-semibold tracking-[-0.015em] text-ink-900">
-            Poka Sales Engine
+          <span className="hidden min-w-0 xl:block">
+            <span className="block truncate text-[13px] font-semibold leading-tight tracking-[-0.01em] text-[var(--rail-text-strong)]">
+              Poka Sales Engine
+            </span>
+            <span className="block truncate text-[11px] leading-tight text-[var(--rail-text)]">
+              Technical Sales Operations
+            </span>
           </span>
-          <span className="hidden text-[11.5px] text-ink-400 sm:inline">Technical Sales Operations</span>
         </Link>
 
-        <nav className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
-          {NAV.map((item) => {
-            const active = item.match(pathname);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "relative shrink-0 rounded px-2.5 py-1.5 text-[12.5px] font-medium transition-colors",
-                  active ? "bg-ink-100 text-ink-900" : "text-ink-500 hover:bg-ink-50 hover:text-ink-800",
-                )}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
+        <nav className="flex-1 overflow-y-auto px-2.5 py-3" aria-label="Primary">
+          {GROUPS.map((group) => (
+            <div key={group.label} className="mb-4 last:mb-0">
+              <div className="mb-1 hidden px-2 text-[11px] font-medium tracking-wide text-[#6b7385] xl:block">
+                {group.label}
+              </div>
+              <ul className="space-y-0.5">
+                {group.items.map((item) => {
+                  const active = item.match(pathname);
+                  const count = item.count ? counts[item.count] : 0;
+                  const Icon = item.icon;
+                  return (
+                    <li key={item.href}>
+                      <Link
+                        href={item.href}
+                        title={item.label}
+                        aria-current={active ? "page" : undefined}
+                        className={cn(
+                          "group relative flex h-8 items-center justify-center gap-2.5 rounded-md px-2 text-[13px] transition-colors xl:justify-start",
+                          active
+                            ? "bg-[var(--rail-raised)] text-[var(--rail-text-strong)]"
+                            : "text-[var(--rail-text)] hover:bg-[var(--rail-raised)] hover:text-[var(--rail-text-strong)]",
+                        )}
+                      >
+                        {active ? (
+                          <span className="absolute inset-y-1.5 left-0 w-[2px] rounded-full bg-accent-400" aria-hidden />
+                        ) : null}
+                        <Icon className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
+                        <span className="hidden flex-1 truncate xl:block">{item.label}</span>
+                        {count > 0 ? (
+                          <span
+                            className={cn(
+                              "hidden rounded px-1.5 text-[11px] font-medium tabular-nums xl:inline",
+                              item.count === "approvals"
+                                ? "bg-warn-500/15 text-[#f3c77a]"
+                                : "bg-white/[0.07] text-[var(--rail-text)]",
+                            )}
+                          >
+                            {count}
+                          </span>
+                        ) : null}
+                        {count > 0 && item.count === "approvals" ? (
+                          <span className="absolute right-2 top-1.5 size-1.5 rounded-full bg-warn-500 xl:hidden" aria-hidden />
+                        ) : null}
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
         </nav>
 
-        <div
-          className="hidden shrink-0 items-center gap-2 lg:flex"
-          title={provider.note}
-        >
-          {/* What can actually run, not which extractor is configured. The
-              engines are deterministic in both cases; what changes is whether
-              a model is available to direct an investigation. */}
-          <span className={cn("size-1.5 rounded-full", adaptiveModel ? "bg-accent-500" : "bg-pass-600")} />
-          <span className="text-[11.5px] text-ink-500">
-            {adaptiveModel ? `Deterministic + adaptive · ${adaptiveModel}` : "Deterministic · offline"}
-          </span>
+        {/* What can run right now, and a plain statement that nothing here is
+            real customer data. Both are facts a first-time viewer needs and
+            neither deserves more than a line. */}
+        <div className="space-y-2.5 border-t border-[var(--rail-hairline)] px-3 py-3">
+          <div className="hidden space-y-1.5 xl:block">
+            <StatusLine tone="pass" label="Deterministic engines" value="Online" />
+            <StatusLine
+              tone={adaptiveModel ? "accent" : "idle"}
+              label="Adaptive agent"
+              value={adaptiveModel ?? "Offline"}
+            />
+          </div>
+          <div
+            className="flex items-center justify-center gap-2 rounded-md border border-[var(--rail-hairline)] px-2 py-1.5 xl:justify-start"
+            title="Independent demonstration project. Every company, person, product, price and document is synthetic. Not affiliated with or used by Poka."
+          >
+            <span className="size-1.5 shrink-0 rounded-full bg-warn-500" aria-hidden />
+            <span className="hidden text-[11px] leading-tight text-[var(--rail-text)] xl:block">
+              Synthetic demo data
+            </span>
+          </div>
         </div>
-      </header>
+      </aside>
 
-      <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
+      <main className="min-w-0 flex-1 overflow-y-auto bg-[var(--canvas)]">{children}</main>
+    </div>
+  );
+}
+
+function StatusLine({ tone, label, value }: { tone: "pass" | "accent" | "idle"; label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-2 text-[11px] leading-tight">
+      <span
+        className={cn(
+          "size-1.5 shrink-0 rounded-full",
+          tone === "pass" && "bg-pass-500",
+          tone === "accent" && "bg-accent-400",
+          tone === "idle" && "bg-[#4b5263]",
+        )}
+        aria-hidden
+      />
+      <span className="text-[var(--rail-text)]">{label}</span>
+      <span className="ml-auto truncate font-mono text-[10.5px] text-[#7d8597]">{value}</span>
     </div>
   );
 }

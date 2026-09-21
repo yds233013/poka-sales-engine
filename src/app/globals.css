@@ -21,38 +21,57 @@
   --color-ink-900: #151a24;
   --color-ink-950: #0c0f16;
 
-  --color-accent-50: #eef4ff;
-  --color-accent-100: #dae6ff;
-  --color-accent-200: #bcd2ff;
-  --color-accent-500: #2f5fd0;
-  --color-accent-600: #23499f;
-  --color-accent-700: #1b3a80;
+  --color-accent-50: #eff4ff;
+  --color-accent-100: #dce7fe;
+  --color-accent-200: #bfd3fe;
+  --color-accent-300: #93b4fd;
+  --color-accent-400: #5e8bf7;
+  --color-accent-500: #2f63e0;
+  --color-accent-600: #2350c2;
+  --color-accent-700: #1d4199;
   --color-accent-900: #142a5c;
 
-  --color-pass-50: #eef8f0;
-  --color-pass-200: #b9e0c3;
+  --color-pass-50: #edf8f1;
+  --color-pass-100: #d5efdf;
+  --color-pass-200: #b1dfc2;
+  --color-pass-500: #27915a;
   --color-pass-600: #1d7a45;
   --color-pass-700: #145c34;
 
-  --color-warn-50: #fdf5e8;
+  --color-warn-50: #fdf6e9;
+  --color-warn-100: #fbebcc;
   --color-warn-200: #f2dcae;
+  --color-warn-500: #c98a1c;
   --color-warn-600: #a96b0c;
   --color-warn-700: #85540a;
 
-  --color-fail-50: #fdeeee;
+  --color-fail-50: #fdf0f0;
+  --color-fail-100: #fadcdc;
   --color-fail-200: #f3c4c4;
+  --color-fail-500: #d0453f;
   --color-fail-600: #b02a2a;
   --color-fail-700: #8d2222;
 
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: var(--font-mono-stack), ui-monospace, "SF Mono", Menlo, monospace;
+  --font-mono: var(--font-jetbrains), ui-monospace, "SF Mono", Menlo, monospace;
 }
 
 :root {
   --surface: #ffffff;
-  --canvas: #f4f5f7;
-  --hairline: #e3e6ec;
-  --hairline-strong: #d3d8e0;
+  --canvas: #f5f6f8;
+  --hairline: #e4e7ec;
+  --hairline-strong: #d0d5dd;
+
+  /* The sidebar is the product's identity surface: near-black, no gradient. */
+  --rail: #0e1117;
+  --rail-raised: #171b24;
+  --rail-hairline: #232835;
+  --rail-text: #a3abbb;
+  --rail-text-strong: #eef0f4;
+
+  --shadow-xs: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-sm: 0 1px 3px rgba(16, 24, 40, 0.06), 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-pop: 0 12px 32px -8px rgba(16, 24, 40, 0.18), 0 2px 6px rgba(16, 24, 40, 0.06);
 }
 
 * {
@@ -80,12 +99,41 @@ body {
   font-feature-settings: "tnum" 1;
 }
 
+/*
+ * Type scale. Seven steps, used by name rather than by pixel so the hierarchy
+ * stays disciplined: nothing below 11px, uppercase reserved for field labels.
+ */
+.t-display { font-size: 22px; line-height: 28px; font-weight: 600; letter-spacing: -0.02em; }
+.t-title   { font-size: 15px; line-height: 22px; font-weight: 600; letter-spacing: -0.012em; }
+.t-heading { font-size: 13.5px; line-height: 20px; font-weight: 600; letter-spacing: -0.006em; }
+.t-body    { font-size: 13px; line-height: 20px; }
+.t-small   { font-size: 12px; line-height: 18px; }
+.t-micro   { font-size: 11px; line-height: 16px; }
+.t-figure  { font-size: 20px; line-height: 26px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+
 .label-xs {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--color-ink-500);
+}
+
+/* One focus treatment for the whole product. */
+:where(a, button, [role="button"], input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--color-accent-500);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Disclosure markers are drawn by the product, not the browser. */
+summary::-webkit-details-marker { display: none; }
+
+@keyframes fade-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+.animate-in { animation: fade-in 160ms ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
 }
 
 ::-webkit-scrollbar {

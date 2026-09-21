@@ -2,12 +2,14 @@
  * Shared UI primitives.
  *
  * Hand-built rather than pulled from a component library, so the product has
- * its own density and voice: hairline borders, 11px uppercase section labels,
+ * its own density and voice: hairline borders, a disciplined type scale,
  * tabular figures, and colour used only where it encodes state.
  */
 
 import { cn } from "@/lib/cn";
 import type { ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
+import { requestStatus } from "@/lib/status";
 
 // ────────────────────────────── Surface ────────────────────────────────────
 
@@ -23,7 +25,7 @@ export function Panel({
   return (
     <section
       className={cn(
-        "rounded-md border border-[var(--hairline)] bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04)]",
+        "rounded-lg border border-[var(--hairline)] bg-white shadow-[var(--shadow-xs)]",
         !flush && "overflow-hidden",
         className,
       )}
@@ -37,11 +39,13 @@ export function PanelHeader({
   title,
   subtitle,
   actions,
+  icon: Icon,
   className,
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
   actions?: ReactNode;
+  icon?: LucideIcon;
   className?: string;
 }) {
   return (
@@ -51,9 +55,12 @@ export function PanelHeader({
         className,
       )}
     >
-      <div className="min-w-0">
-        <h2 className="text-[13px] font-semibold tracking-[-0.01em] text-ink-900">{title}</h2>
-        {subtitle ? <p className="mt-0.5 text-[12px] text-ink-500">{subtitle}</p> : null}
+      <div className="flex min-w-0 items-start gap-2.5">
+        {Icon ? <Icon className="mt-0.5 size-4 shrink-0 text-ink-400" strokeWidth={1.75} aria-hidden /> : null}
+        <div className="min-w-0">
+          <h2 className="t-heading text-ink-900">{title}</h2>
+          {subtitle ? <p className="t-small mt-0.5 text-ink-500">{subtitle}</p> : null}
+        </div>
       </div>
       {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
     </header>
@@ -91,7 +98,7 @@ export function Pill({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset whitespace-nowrap",
+        "inline-flex h-[22px] items-center gap-1.5 rounded-md px-2 text-[11.5px] font-medium ring-1 ring-inset whitespace-nowrap",
         STATUS_TONES[tone],
         className,
       )}
@@ -99,6 +106,16 @@ export function Pill({
       {dot ? <span className="size-1.5 rounded-full bg-current opacity-70" /> : null}
       {children}
     </span>
+  );
+}
+
+/** A case's status, named and coloured the same way on every screen. */
+export function StatusBadge({ status, className }: { status: string; className?: string }) {
+  const meaning = requestStatus(status);
+  return (
+    <Pill tone={meaning.tone} dot className={className}>
+      {meaning.label}
+    </Pill>
   );
 }
 
@@ -139,9 +156,11 @@ export function statusLabel(value: string): string {
 
 const BUTTON_VARIANTS = {
   primary:
-    "bg-ink-900 text-white hover:bg-ink-800 disabled:bg-ink-300 focus-visible:outline-ink-900",
+    "bg-ink-900 text-white shadow-[var(--shadow-xs)] hover:bg-ink-800 disabled:bg-ink-300 disabled:shadow-none",
+  accent:
+    "bg-accent-600 text-white shadow-[var(--shadow-xs)] hover:bg-accent-700 disabled:bg-ink-300 disabled:shadow-none",
   secondary:
-    "bg-white text-ink-800 ring-1 ring-inset ring-[var(--hairline-strong)] hover:bg-ink-50 disabled:text-ink-400",
+    "bg-white text-ink-800 shadow-[var(--shadow-xs)] ring-1 ring-inset ring-[var(--hairline-strong)] hover:bg-ink-50 disabled:text-ink-400 disabled:shadow-none",
   ghost: "text-ink-600 hover:bg-ink-100 hover:text-ink-900 disabled:text-ink-300",
   danger:
     "bg-white text-fail-700 ring-1 ring-inset ring-fail-200 hover:bg-fail-50 disabled:text-ink-400",
@@ -164,8 +183,8 @@ export function Button({
     <button
       type={type}
       className={cn(
-        "inline-flex items-center justify-center gap-1.5 rounded font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed",
-        size === "sm" ? "h-7 px-2.5 text-[12px]" : "h-8 px-3 text-[12.5px]",
+        "inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-[background-color,box-shadow,transform] active:translate-y-px disabled:cursor-not-allowed disabled:active:translate-y-0",
+        size === "sm" ? "h-7 px-2.5 text-[12px]" : "h-8 px-3.5 text-[13px]",
         BUTTON_VARIANTS[variant],
         className,
       )}
@@ -226,10 +245,10 @@ export function Metric({
   return (
     <div className="px-4 py-3">
       <div className="label-xs">{label}</div>
-      <div className={cn("tnum mt-1.5 text-[22px] font-semibold tracking-[-0.02em]", valueTone)}>
+      <div className={cn("t-figure mt-1.5", valueTone)}>
         {value}
       </div>
-      {hint ? <div className="mt-0.5 text-[11.5px] text-ink-500">{hint}</div> : null}
+      {hint ? <div className="t-small mt-0.5 text-ink-500">{hint}</div> : null}
     </div>
   );
 }
@@ -238,16 +257,23 @@ export function EmptyState({
   title,
   description,
   action,
+  icon: Icon,
 }: {
   title: string;
   description?: string;
   action?: ReactNode;
+  icon?: LucideIcon;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
-      <p className="text-[13px] font-medium text-ink-700">{title}</p>
+    <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
+      {Icon ? (
+        <span className="mb-3 flex size-9 items-center justify-center rounded-lg bg-ink-50 ring-1 ring-inset ring-[var(--hairline)]">
+          <Icon className="size-4 text-ink-400" strokeWidth={1.75} aria-hidden />
+        </span>
+      ) : null}
+      <p className="t-heading text-ink-800">{title}</p>
       {description ? (
-        <p className="mt-1 max-w-sm text-[12px] leading-relaxed text-ink-500">{description}</p>
+        <p className="t-small mt-1 max-w-sm text-ink-500">{description}</p>
       ) : null}
       {action ? <div className="mt-4">{action}</div> : null}
     </div>
