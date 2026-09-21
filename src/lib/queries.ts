@@ -131,6 +131,8 @@ export async function getInbox() {
       approvals: true,
       quotes: { orderBy: { createdAt: "desc" }, take: 1 },
       recommendations: { orderBy: { createdAt: "desc" }, take: 1 },
+      runs: { orderBy: { startedAt: "desc" }, take: 1, select: { mode: true, modelSource: true, durationMs: true } },
+      auditEvents: { orderBy: { createdAt: "desc" }, take: 1, select: { createdAt: true, summary: true } },
     },
     orderBy: [{ receivedAt: "desc" }],
   });

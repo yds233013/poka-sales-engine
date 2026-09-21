@@ -121,7 +121,7 @@ export default async function OverviewPage() {
           label="Not yet analysed"
           value={notAnalysed.length}
           detail="In the inbox, untouched"
-          href="/inbox?filter=open"
+          href="/inbox?filter=new"
         />
       </div>
 

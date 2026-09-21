@@ -2,17 +2,14 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import {
-  Panel,
-  Pill,
-  REQUEST_STATUS_TONE,
-  RISK_TONE,
-  statusLabel,
-  EmptyState,
-  Mono,
-} from "@/components/ui/primitives";
+import { useRouter } from "next/navigation";
+import { CalendarClock, Globe, Mail, Phone, Search, ShieldAlert, ShieldCheck, X } from "lucide-react";
+import { EmptyState, Mono, Pill, RISK_TONE, StatusBadge, statusLabel } from "@/components/ui/primitives";
+import { RunModeBadge } from "@/components/run-mode";
 import { cn } from "@/lib/cn";
-import { age, money, shortDate, titleCase } from "@/lib/format";
+import { money, shortDate } from "@/lib/format";
+import { OUTCOME_LABEL, OUTCOME_TONE } from "@/lib/status";
+import { INBOX_FILTERS, type FilterKey } from "@/lib/inbox-filters";
 
 export interface InboxRowView {
   id: string;
@@ -32,32 +29,28 @@ export interface InboxRowView {
   outcome: string | null;
   pendingApprovals: number;
   totalApprovals: number;
+  run: { mode: string; modelSource: string } | null;
+  lastActivity: { at: string; summary: string } | null;
+  /** Computed on the server: rendering must not read the clock. */
+  overdue: boolean;
+  lastActivityAgo: string;
 }
 
-const FILTERS = [
-  { key: "all", label: "All" },
-  { key: "open", label: "Open" },
-  { key: "review", label: "Needs review" },
-  { key: "approval", label: "Awaiting approval" },
-  { key: "ready", label: "Ready to send" },
-  { key: "blocked", label: "Blocked" },
-  { key: "closed", label: "Completed" },
-] as const;
-
-type FilterKey = (typeof FILTERS)[number]["key"];
 
 function matches(row: InboxRowView, filter: FilterKey): boolean {
   switch (filter) {
     case "open":
-      return !["COMPLETED"].includes(row.status);
+      return row.status !== "COMPLETED";
+    case "new":
+      return row.status === "NEW";
     case "review":
-      return row.status === "NEEDS_REVIEW";
+      // Blocked and needs-review are both "a person has to look", which is
+      // how the overview counts them too.
+      return row.status === "NEEDS_REVIEW" || row.status === "BLOCKED";
     case "approval":
-      return row.status === "READY_FOR_APPROVAL" || row.pendingApprovals > 0;
+      return row.status === "READY_FOR_APPROVAL";
     case "ready":
       return row.status === "RESPONSE_READY" || row.status === "APPROVED";
-    case "blocked":
-      return row.status === "BLOCKED";
     case "closed":
       return row.status === "COMPLETED";
     default:
@@ -65,162 +58,188 @@ function matches(row: InboxRowView, filter: FilterKey): boolean {
   }
 }
 
-const OUTCOME_LABEL: Record<string, string> = {
-  EXACT_MATCH: "Exact match",
-  SUBSTITUTE: "Substitution",
-  SPLIT_FULFILLMENT: "Split shipment",
-  NO_VIABLE_OPTION: "No viable option",
-  INFORMATION_REQUIRED: "Information required",
-  INFORMATION_PROVIDED: "Question answered",
+const CHANNEL_ICON: Record<string, typeof Mail> = { EMAIL: Mail, PHONE: Phone, PORTAL: Globe };
+
+/** A status stripe down the left edge, so the list can be scanned by colour. */
+const STRIPE: Record<string, string> = {
+  BLOCKED: "bg-fail-500",
+  NEEDS_REVIEW: "bg-warn-500",
+  READY_FOR_APPROVAL: "bg-warn-500",
+  APPROVED: "bg-accent-500",
+  RESPONSE_READY: "bg-pass-500",
+  NEW: "bg-ink-300",
+  COMPLETED: "bg-ink-200",
+  ANALYZING: "bg-accent-400",
 };
 
-export function InboxTable({ rows }: { rows: InboxRowView[] }) {
-  const [filter, setFilter] = useState<FilterKey>("all");
+export function InboxTable({ rows, initialFilter = "all" }: { rows: InboxRowView[]; initialFilter?: FilterKey }) {
+  const router = useRouter();
+  const [filter, setFilter] = useState<FilterKey>(initialFilter);
   const [query, setQuery] = useState("");
 
-  const counts = useMemo(() => {
-    const out = {} as Record<FilterKey, number>;
-    for (const f of FILTERS) out[f.key] = rows.filter((r) => matches(r, f.key)).length;
-    return out;
-  }, [rows]);
+  const counts = useMemo(
+    () => Object.fromEntries(INBOX_FILTERS.map((f) => [f.key, rows.filter((r) => matches(r, f.key)).length])),
+    [rows],
+  );
 
-  const filtered = useMemo(() => {
+  const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return rows
-      .filter((row) => matches(row, filter))
-      .filter((row) =>
-        q.length === 0
-          ? true
-          : [row.reference, row.subject, row.customer, row.summary ?? "", row.owner]
-              .join(" ")
-              .toLowerCase()
-              .includes(q),
-      );
+    return rows.filter(
+      (row) =>
+        matches(row, filter) &&
+        (!q ||
+          [row.reference, row.customer, row.subject, row.summary ?? "", row.site, row.owner]
+            .join(" ")
+            .toLowerCase()
+            .includes(q)),
+    );
   }, [rows, filter, query]);
 
+  const choose = (key: FilterKey) => {
+    setFilter(key);
+    // Keep the filter in the URL so a lane on the overview and a shared link
+    // land on the same view.
+    router.replace(key === "all" ? "/inbox" : `/inbox?filter=${key}`, { scroll: false });
+  };
+
   return (
-    <Panel>
-      <div className="flex flex-wrap items-center gap-2 border-b border-[var(--hairline)] px-3 py-2.5">
-        <div className="flex flex-wrap items-center gap-0.5">
-          {FILTERS.map((f) => (
+    <div className="overflow-hidden rounded-lg border border-[var(--hairline)] bg-white shadow-[var(--shadow-xs)]">
+      <div className="flex flex-wrap items-center gap-3 border-b border-[var(--hairline)] px-3 py-2.5">
+        <div role="tablist" aria-label="Filter requests" className="flex flex-wrap gap-0.5">
+          {INBOX_FILTERS.map((f) => (
             <button
               key={f.key}
+              role="tab"
+              aria-selected={filter === f.key}
               type="button"
-              onClick={() => setFilter(f.key)}
+              onClick={() => choose(f.key)}
               className={cn(
-                "rounded px-2 py-1 text-[12px] font-medium transition-colors",
-                filter === f.key ? "bg-ink-900 text-white" : "text-ink-600 hover:bg-ink-100",
+                "flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[12.5px] font-medium transition-colors",
+                filter === f.key ? "bg-ink-900 text-white" : "text-ink-600 hover:bg-ink-100 hover:text-ink-900",
               )}
             >
               {f.label}
-              <span className={cn("tnum ml-1.5", filter === f.key ? "text-ink-300" : "text-ink-400")}>
-                {counts[f.key]}
-              </span>
+              <span className={cn("tnum text-[11px]", filter === f.key ? "text-white/70" : "text-ink-400")}>{counts[f.key]}</span>
             </button>
           ))}
         </div>
-        <div className="ml-auto">
+        <label className="relative ml-auto w-full sm:w-72">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-400" aria-hidden />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search reference, customer, subject…"
-            className="h-7 w-64 rounded border border-[var(--hairline-strong)] bg-white px-2.5 text-[12px] text-ink-900 placeholder:text-ink-400 focus:border-accent-500 focus:outline-none"
+            placeholder="Search reference, customer, part, owner…"
+            aria-label="Search requests"
+            className="h-8 w-full rounded-md border border-[var(--hairline-strong)] bg-white pl-8 pr-8 text-[12.5px] text-ink-900 placeholder:text-ink-400 focus:border-accent-500 focus:outline-none"
           />
-        </div>
+          {query ? (
+            <button
+              type="button"
+              aria-label="Clear search"
+              onClick={() => setQuery("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700"
+            >
+              <X className="size-3.5" />
+            </button>
+          ) : null}
+        </label>
       </div>
 
-      {filtered.length === 0 ? (
+      {visible.length === 0 ? (
         <EmptyState
+          icon={Search}
           title="No requests match"
-          description="Try a different filter or clear the search."
+          description={query ? `Nothing matches "${query}" in this view.` : "Nothing is in this state right now."}
         />
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1080px] border-collapse">
-            <thead>
-              <tr className="border-b border-[var(--hairline)] bg-ink-50/60">
-                {["Reference", "Customer", "Request", "Outcome", "Status", "Risk", "Approvals", "Value", "Needed", "Owner", "Age"].map(
-                  (heading) => (
-                    <th
-                      key={heading}
-                      className="label-xs px-3 py-2 text-left whitespace-nowrap"
-                    >
-                      {heading}
-                    </th>
-                  ),
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((row) => (
-                <tr key={row.id} className="group border-b border-[var(--hairline)] last:border-0 hover:bg-ink-50">
-                  <td className="px-3 py-2.5 align-top whitespace-nowrap">
-                    <Link href={`/cases/${row.id}`} className="block">
-                      <Mono className="group-hover:text-accent-600">{row.reference}</Mono>
-                      <div className="mt-0.5 text-[11px] text-ink-400">{titleCase(row.channel)}</div>
-                    </Link>
-                  </td>
-                  <td className="max-w-[180px] px-3 py-2.5 align-top">
-                    <Link href={`/cases/${row.id}`} className="block">
-                      <div className="truncate text-[12.5px] font-medium text-ink-900">{row.customer}</div>
-                      <div className="truncate text-[11.5px] text-ink-500">{row.site}</div>
-                    </Link>
-                  </td>
-                  <td className="max-w-[300px] px-3 py-2.5 align-top">
-                    <Link href={`/cases/${row.id}`} className="block">
-                      <div className="truncate text-[12.5px] text-ink-900">{row.subject}</div>
-                      {row.summary ? (
-                        <div className="truncate text-[11.5px] text-ink-500">{row.summary}</div>
+        <ul className="divide-y divide-[var(--hairline)]">
+          {visible.map((row) => {
+            const ChannelIcon = CHANNEL_ICON[row.channel] ?? Mail;
+            return (
+              <li key={row.id}>
+                <Link href={`/cases/${row.id}`} className="group relative flex items-stretch transition-colors hover:bg-ink-50/70">
+                  <span className={cn("w-[3px] shrink-0", STRIPE[row.status] ?? "bg-ink-200")} aria-hidden />
+                  <div className="grid min-w-0 flex-1 grid-cols-1 gap-x-5 gap-y-2 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_200px_150px]">
+                    {/* What it is */}
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Mono className="!text-[12px] text-ink-500">{row.reference}</Mono>
+                        <ChannelIcon className="size-3.5 text-ink-400" aria-label={statusLabel(row.channel)} />
+                        <StatusBadge status={row.status} />
+                        {/* A blocked case is its own risk statement; saying it twice is noise. */}
+                        {row.risk !== "LOW" && !(row.risk === "BLOCKED" && row.status === "BLOCKED") ? (
+                          <Pill tone={RISK_TONE[row.risk]} dot>
+                            {statusLabel(row.risk)} risk
+                          </Pill>
+                        ) : null}
+                      </div>
+                      <div className="t-heading mt-1 truncate text-ink-900 group-hover:text-accent-700">{row.subject}</div>
+                      <div className="t-small mt-0.5 truncate text-ink-500">
+                        <span className="font-medium text-ink-700">{row.customer}</span>
+                        <span className="mx-1.5 text-ink-300">·</span>
+                        {row.site}
+                        {row.summary ? (
+                          <>
+                            <span className="mx-1.5 text-ink-300">·</span>
+                            {row.summary}
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    {/* Where it stands */}
+                    <div className="flex min-w-0 flex-row flex-wrap items-center gap-2 lg:flex-col lg:items-start lg:justify-center lg:gap-1">
+                      {row.outcome ? (
+                        <span
+                          className={cn(
+                            "t-small font-medium",
+                            OUTCOME_TONE[row.outcome] === "fail"
+                              ? "text-fail-700"
+                              : OUTCOME_TONE[row.outcome] === "warn"
+                                ? "text-warn-700"
+                                : "text-ink-800",
+                          )}
+                        >
+                          {OUTCOME_LABEL[row.outcome] ?? row.outcome}
+                        </span>
                       ) : (
-                        <div className="text-[11.5px] text-ink-400">Not yet analysed</div>
+                        <span className="t-small text-ink-400">Not analysed</span>
                       )}
-                    </Link>
-                  </td>
-                  <td className="px-3 py-2.5 align-top whitespace-nowrap text-[12px] text-ink-600">
-                    {row.outcome ? OUTCOME_LABEL[row.outcome] ?? titleCase(row.outcome) : "—"}
-                  </td>
-                  <td className="px-3 py-2.5 align-top whitespace-nowrap">
-                    <Pill tone={REQUEST_STATUS_TONE[row.status]}>{statusLabel(row.status)}</Pill>
-                  </td>
-                  <td className="px-3 py-2.5 align-top whitespace-nowrap">
-                    <Pill tone={RISK_TONE[row.risk]} dot>
-                      {statusLabel(row.risk)}
-                    </Pill>
-                  </td>
-                  <td className="tnum px-3 py-2.5 align-top whitespace-nowrap text-[12px]">
-                    {row.totalApprovals === 0 ? (
-                      <span className="text-ink-400">None</span>
-                    ) : row.pendingApprovals > 0 ? (
-                      <span className="font-medium text-warn-700">
-                        {row.pendingApprovals} of {row.totalApprovals} open
+                      {row.totalApprovals > 0 ? (
+                        <span className={cn("t-small flex items-center gap-1", row.pendingApprovals > 0 ? "text-warn-700" : "text-pass-700")}>
+                          {row.pendingApprovals > 0 ? <ShieldAlert className="size-3.5" aria-hidden /> : <ShieldCheck className="size-3.5" aria-hidden />}
+                          {row.pendingApprovals > 0 ? `${row.pendingApprovals} of ${row.totalApprovals} approvals open` : "Approvals cleared"}
+                        </span>
+                      ) : null}
+                      {row.run ? <RunModeBadge mode={row.run.mode} modelSource={row.run.modelSource} className="!h-5 !text-[11px]" /> : null}
+                    </div>
+
+                    {/* Money and time */}
+                    <div className="flex min-w-0 items-center justify-between gap-3 lg:flex-col lg:items-end lg:justify-center lg:gap-1">
+                      <span className="tnum t-heading text-ink-900">{row.value !== null ? money(row.value) : "—"}</span>
+                      {row.requiredBy ? (
+                        <span className={cn("t-small flex items-center gap-1", row.overdue ? "text-fail-700" : "text-ink-500")}>
+                          <CalendarClock className="size-3.5" aria-hidden />
+                          Needed {shortDate(row.requiredBy)}
+                        </span>
+                      ) : null}
+                      <span className="t-micro flex items-center gap-1.5 text-ink-400" title={row.lastActivity?.summary}>
+                        <span className="flex size-4 items-center justify-center rounded-full bg-ink-100 text-[9px] font-semibold text-ink-600" title={row.owner}>
+                          {row.ownerInitials}
+                        </span>
+                        {row.lastActivityAgo}
                       </span>
-                    ) : (
-                      <span className="text-pass-700">All cleared</span>
-                    )}
-                  </td>
-                  <td className="tnum px-3 py-2.5 align-top whitespace-nowrap text-[12.5px] font-medium text-ink-900">
-                    {row.value === null ? <span className="font-normal text-ink-400">—</span> : money(row.value)}
-                  </td>
-                  <td className="tnum px-3 py-2.5 align-top whitespace-nowrap text-[12px] text-ink-600">
-                    {row.requiredBy ? shortDate(row.requiredBy) : <span className="text-ink-400">Not stated</span>}
-                  </td>
-                  <td className="px-3 py-2.5 align-top whitespace-nowrap">
-                    <span
-                      className="inline-flex size-5 items-center justify-center rounded-full bg-ink-100 text-[10px] font-semibold text-ink-600"
-                      title={row.owner}
-                    >
-                      {row.ownerInitials}
-                    </span>
-                  </td>
-                  <td className="tnum px-3 py-2.5 align-top whitespace-nowrap text-[12px] text-ink-500">
-                    {age(new Date(row.receivedAt))}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    </div>
+                  </div>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
       )}
-    </Panel>
+      <div className="t-small border-t border-[var(--hairline)] bg-ink-50/50 px-4 py-2 text-ink-500">
+        Showing {visible.length} of {rows.length} requests
+      </div>
+    </div>
   );
 }

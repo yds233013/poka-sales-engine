@@ -296,9 +296,11 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
           meta={
             <div className="t-small flex flex-wrap items-center gap-x-4 gap-y-1.5 text-ink-500">
               <StatusBadge status={request.status} />
-              <Pill tone={RISK_TONE[request.risk]} dot>
-                {statusLabel(request.risk)} risk
-              </Pill>
+              {request.risk === "BLOCKED" && request.status === "BLOCKED" ? null : (
+                <Pill tone={RISK_TONE[request.risk]} dot>
+                  {statusLabel(request.risk)} risk
+                </Pill>
+              )}
               <Link href="/customers" className="flex items-center gap-1.5 font-medium text-ink-800 hover:text-accent-700">
                 <Building2 className="size-3.5 text-ink-400" aria-hidden />
                 {request.customer?.name ?? "Unidentified account"}

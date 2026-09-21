@@ -58,3 +58,8 @@ export function duration(ms: number | null | undefined): string {
   if (ms < 1000) return `${ms} ms`;
   return `${(ms / 1000).toFixed(1)} s`;
 }
+
+/** True when the date is before now. Kept here so render code never reads the clock directly. */
+export function isPast(date: Date): boolean {
+  return date.getTime() < Date.now();
+}
