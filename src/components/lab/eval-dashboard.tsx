@@ -226,7 +226,7 @@ export function EvalDashboard({ adaptiveAvailable }: { adaptiveAvailable: boolea
                                   <li key={check.name} className="flex items-start gap-2">
                                     <Pill
                                       tone={check.passed ? "pass" : check.critical ? "fail" : "warn"}
-                                      className="!px-1 !py-0 !text-[10px]"
+                                      className="!px-1 !py-0 !text-[11px]"
                                     >
                                       {check.passed ? "pass" : "fail"}
                                     </Pill>
@@ -237,7 +237,7 @@ export function EvalDashboard({ adaptiveAvailable }: { adaptiveAvailable: boolea
                                 ))}
                               </ul>
                               {r.toolSequence.length > 0 ? (
-                                <p className="mt-2 font-mono text-[10.5px] leading-relaxed text-ink-500">
+                                <p className="mt-2 font-mono text-[11px] leading-relaxed text-ink-500">
                                   {r.toolSequence.join(" → ")}
                                 </p>
                               ) : null}

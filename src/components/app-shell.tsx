@@ -191,7 +191,7 @@ function StatusLine({ tone, label, value }: { tone: "pass" | "accent" | "idle"; 
         aria-hidden
       />
       <span className="text-[var(--rail-text)]">{label}</span>
-      <span className="ml-auto truncate font-mono text-[10.5px] text-[#7d8597]">{value}</span>
+      <span className="ml-auto truncate font-mono text-[11px] text-[#7d8597]">{value}</span>
     </div>
   );
 }

@@ -91,7 +91,7 @@ export default async function QuotePage({ params }: { params: Promise<{ quoteNum
         <header className="flex items-start justify-between gap-8 border-b border-ink-900 pb-4">
           <div>
             <div className="flex items-center gap-2">
-              <span className="flex size-5 items-center justify-center rounded-[3px] bg-ink-900 text-[10px] font-bold text-white">
+              <span className="flex size-5 items-center justify-center rounded-[3px] bg-ink-900 text-[11px] font-bold text-white">
                 P
               </span>
               <span className="text-[14px] font-semibold tracking-[-0.015em] text-ink-900">

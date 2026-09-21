@@ -63,7 +63,7 @@ export default async function CustomersPage() {
                     <li key={site.id} className="flex items-baseline justify-between gap-3 text-[12px]">
                       <span className="text-ink-800">
                         {site.name}
-                        {site.isPrimary ? <span className="ml-1.5 text-[10px] text-ink-400">primary</span> : null}
+                        {site.isPrimary ? <span className="ml-1.5 text-[11px] text-ink-400">primary</span> : null}
                       </span>
                       <span className="text-ink-500">
                         {site.city}, {site.state} · {titleCase(site.freightZone)}

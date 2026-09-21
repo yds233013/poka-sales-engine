@@ -56,7 +56,7 @@ export function SectionNav({
             >
               {section.label}
               {section.badge !== undefined && section.badge !== null && section.badge !== 0 ? (
-                <span className="tnum rounded bg-warn-100 px-1 text-[10.5px] font-semibold text-warn-700">{section.badge}</span>
+                <span className="tnum rounded bg-warn-100 px-1 text-[11px] font-semibold text-warn-700">{section.badge}</span>
               ) : null}
             </a>
           ))}

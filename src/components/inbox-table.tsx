@@ -224,7 +224,7 @@ export function InboxTable({ rows, initialFilter = "all" }: { rows: InboxRowView
                         </span>
                       ) : null}
                       <span className="t-micro flex items-center gap-1.5 text-ink-400" title={row.lastActivity?.summary}>
-                        <span className="flex size-4 items-center justify-center rounded-full bg-ink-100 text-[9px] font-semibold text-ink-600" title={row.owner}>
+                        <span className="flex size-4 items-center justify-center rounded-full bg-ink-100 text-[11px] font-semibold text-ink-600" title={row.owner}>
                           {row.ownerInitials}
                         </span>
                         {row.lastActivityAgo}

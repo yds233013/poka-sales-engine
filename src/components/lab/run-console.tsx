@@ -92,12 +92,12 @@ export function RunConsole({
                   </span>
                   {option.available ? (
                     option.model ? (
-                      <span className={cn("text-[10.5px]", active ? "text-ink-300" : "text-ink-400")}>
+                      <span className={cn("text-[11px]", active ? "text-ink-300" : "text-ink-400")}>
                         {option.model}
                       </span>
                     ) : null
                   ) : (
-                    <Pill tone="neutral" className="!px-1 !py-0 !text-[10px]">
+                    <Pill tone="neutral" className="!px-1 !py-0 !text-[11px]">
                       unavailable
                     </Pill>
                   )}

@@ -105,7 +105,7 @@ export default async function CatalogPage({
                             {product.lifecycle !== "ACTIVE" ? (
                               <Pill
                                 tone={product.lifecycle === "DISCONTINUED" ? "fail" : "warn"}
-                                className="!px-1 !py-0 !text-[9.5px]"
+                                className="!px-1 !py-0 !text-[11px]"
                               >
                                 {statusLabel(product.lifecycle)}
                               </Pill>

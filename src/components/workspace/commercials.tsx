@@ -144,7 +144,7 @@ export function Commercials({
               <Lock className="size-3.5 text-ink-400" aria-hidden />
               Internal only
             </div>
-            <span className="flex items-center gap-1 rounded bg-ink-900 px-1.5 py-0.5 text-[10.5px] font-medium text-white">
+            <span className="flex items-center gap-1 rounded bg-ink-900 px-1.5 py-0.5 text-[11px] font-medium text-white">
               <EyeOff className="size-3" aria-hidden /> Never sent to the customer
             </span>
           </div>

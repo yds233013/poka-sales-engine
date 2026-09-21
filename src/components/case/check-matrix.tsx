@@ -58,7 +58,7 @@ export function CheckMatrix({
             <div className="flex items-center gap-1.5">
               <Pill tone={CHECK_TONE[check.result]}>{check.result === "NOT_APPLICABLE" ? "N/A" : check.result}</Pill>
               {check.severity === "HARD" && check.result === "FAIL" ? (
-                <span className="text-[10px] font-semibold tracking-wide text-fail-700">HARD</span>
+                <span className="text-[11px] font-semibold tracking-wide text-fail-700">HARD</span>
               ) : null}
             </div>
             <div className="text-[12.5px] font-medium text-ink-900">{check.label}</div>

@@ -45,10 +45,10 @@ export function AdaptivePaths() {
                 return (
                   <li key={`${tool}-${i}`} className="flex items-center gap-1">
                     <span className={cn("inline-flex h-6 items-center rounded px-1.5 font-mono text-[11px] ring-1 ring-inset", phase.chip)}>
-                      <span className="mr-1 text-[10px] opacity-60">{i + 1}</span>
+                      <span className="mr-1 text-[11px] opacity-60">{i + 1}</span>
                       {tool}
                     </span>
-                    {i < path.tools.length - 1 ? <span className="text-[10px] text-ink-300">→</span> : null}
+                    {i < path.tools.length - 1 ? <span className="text-[11px] text-ink-300">→</span> : null}
                   </li>
                 );
               })}

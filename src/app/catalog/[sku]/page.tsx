@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getProduct } from "@/lib/queries";
-import { PageBody } from "@/components/ui/page";
+import { PageBody, PageHeader } from "@/components/ui/page";
 import { Panel, PanelHeader, Pill, Mono, SectionLabel, EmptyState, statusLabel } from "@/components/ui/primitives";
 import { money, shortDate, titleCase } from "@/lib/format";
 import { SPEC_META } from "../../../../prisma/seed/spec-meta";
@@ -25,41 +25,36 @@ export default async function ProductPage({ params }: { params: Promise<{ sku: s
 
   return (
     <PageBody>
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
+      <PageHeader
+        crumbs={[{ label: "Catalog", href: "/catalog" }, { label: product.sku }]}
+        title={product.name}
+        meta={
           <div className="flex flex-wrap items-center gap-2">
-            <Link href="/catalog" className="text-[12px] text-ink-400 hover:text-ink-700">
-              Catalog
-            </Link>
-            <span className="text-ink-300">/</span>
-            <Mono className="!text-[14px] font-semibold">{product.sku}</Mono>
-            <Pill tone={product.lifecycle === "ACTIVE" ? "pass" : product.lifecycle === "DISCONTINUED" ? "fail" : "warn"}>
+            <Mono className="!text-[13px] font-semibold">{product.sku}</Mono>
+            <Pill tone={product.lifecycle === "ACTIVE" ? "pass" : product.lifecycle === "DISCONTINUED" ? "fail" : "warn"} dot>
               {statusLabel(product.lifecycle)}
             </Pill>
             <Pill tone="neutral">{product.category.family}</Pill>
           </div>
-          <h1 className="mt-1.5 text-[18px] font-semibold tracking-[-0.02em] text-ink-900">{product.name}</h1>
-          <p className="mt-1 max-w-3xl text-[12.5px] leading-relaxed text-ink-600">{product.description}</p>
-        </div>
-        <div className="flex gap-6 rounded-md border border-[var(--hairline)] bg-white px-4 py-3">
-          <div>
-            <SectionLabel>List price</SectionLabel>
-            <div className="tnum mt-0.5 text-[16px] font-semibold text-ink-900">{money(product.listPrice)}</div>
+        }
+        description={product.description}
+        actions={
+          <div className="flex divide-x divide-[var(--hairline)] rounded-lg border border-[var(--hairline)] bg-white shadow-[var(--shadow-xs)]">
+            {[
+              ["List price", money(product.listPrice), ""],
+              ["Available to promise", String(atp), atp === 0 ? "text-fail-700" : ""],
+              ["Factory lead time", `${product.leadTimeDays} days`, ""],
+            ].map(([label, value, tone]) => (
+              <div key={label} className="px-4 py-2.5">
+                <div className="t-micro text-ink-500">{label}</div>
+                <div className={`tnum mt-0.5 text-[16px] font-semibold text-ink-900 ${tone}`}>{value}</div>
+              </div>
+            ))}
           </div>
-          <div>
-            <SectionLabel>Available to promise</SectionLabel>
-            <div className={`tnum mt-0.5 text-[16px] font-semibold ${atp === 0 ? "text-fail-700" : "text-ink-900"}`}>
-              {atp}
-            </div>
-          </div>
-          <div>
-            <SectionLabel>Factory lead time</SectionLabel>
-            <div className="tnum mt-0.5 text-[16px] font-semibold text-ink-900">{product.leadTimeDays} d</div>
-          </div>
-        </div>
-      </div>
+        }
+      />
 
-      <div className="mt-5 grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_400px]">
+      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_400px]">
         <div className="flex flex-col gap-5">
           <Panel>
             <PanelHeader title="Specification" subtitle="The values the compatibility engine compares against" />
@@ -168,7 +163,7 @@ export default async function ProductPage({ params }: { params: Promise<{ sku: s
                       <Link href={`/catalog/${link.toProduct.sku}`} className="font-mono text-[12.5px] font-medium text-ink-900 hover:text-accent-600">
                         {link.toProduct.sku}
                       </Link>
-                      <Pill tone="accent" className="!px-1 !py-0 !text-[10px]">
+                      <Pill tone="accent" className="!px-1 !py-0 !text-[11px]">
                         {statusLabel(link.kind)}
                       </Pill>
                     </div>
@@ -185,7 +180,7 @@ export default async function ProductPage({ params }: { params: Promise<{ sku: s
                       <Link href={`/catalog/${link.fromProduct.sku}`} className="font-mono text-[12.5px] font-medium text-ink-900 hover:text-accent-600">
                         {link.fromProduct.sku}
                       </Link>
-                      <Pill tone="neutral" className="!px-1 !py-0 !text-[10px]">
+                      <Pill tone="neutral" className="!px-1 !py-0 !text-[11px]">
                         {statusLabel(link.kind)}
                       </Pill>
                     </div>

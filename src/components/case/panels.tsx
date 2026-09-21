@@ -112,7 +112,7 @@ export function RequirementsPanel({ requirements }: { requirements: RequirementR
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
                   <span className="text-[12.5px] font-medium text-ink-900">{requirement.label}</span>
-                  <Pill tone={KIND_TONE[requirement.kind]} className="!px-1 !py-0 !text-[10px]">
+                  <Pill tone={KIND_TONE[requirement.kind]} className="!px-1 !py-0 !text-[11px]">
                     {requirement.kind.toLowerCase()}
                   </Pill>
                 </div>
@@ -380,7 +380,7 @@ function CandidateItem({ candidate }: { candidate: CandidateRow }) {
             <div className="mt-2 space-y-1">
               {problems.map((check) => (
                 <div key={check.id} className="flex items-start gap-2">
-                  <Pill tone={CHECK_TONE[check.result]} className="mt-px shrink-0 !px-1 !py-0 !text-[10px]">
+                  <Pill tone={CHECK_TONE[check.result]} className="mt-px shrink-0 !px-1 !py-0 !text-[11px]">
                     {check.result === "NOT_APPLICABLE" ? "N/A" : check.result}
                   </Pill>
                   <span className="text-[11.5px] leading-relaxed text-ink-600">
@@ -460,7 +460,7 @@ export function FulfillmentPanel({
                     <span className="truncate text-ink-700">{allocation.warehouseName}</span>
                     <Pill
                       tone={allocation.source === "STOCK" ? "pass" : allocation.source === "INCOMING" ? "warn" : "neutral"}
-                      className="!px-1 !py-0 !text-[10px]"
+                      className="!px-1 !py-0 !text-[11px]"
                     >
                       {allocation.source.toLowerCase()}
                     </Pill>
@@ -593,7 +593,7 @@ export function CommercialsPanel({
         <dl className="bg-white px-4 py-3">
           <div className="flex items-center gap-2">
             <SectionLabel>Internal only</SectionLabel>
-            <Pill tone="neutral" className="!px-1 !py-0 !text-[10px]">
+            <Pill tone="neutral" className="!px-1 !py-0 !text-[11px]">
               never sent to the customer
             </Pill>
           </div>
@@ -785,18 +785,18 @@ export function TracePanel({
                 <div className="flex flex-wrap items-center gap-1.5">
                   <Mono className="!text-[11.5px] text-accent-700">{step.toolName}</Mono>
                   {step.modelInitiated ? (
-                    <Pill tone="accent" className="!px-1 !py-0 !text-[10px]">
+                    <Pill tone="accent" className="!px-1 !py-0 !text-[11px]">
                       agent chose
                     </Pill>
                   ) : null}
-                  <Pill tone={EFFECT_TONE[step.effect] ?? "neutral"} className="!px-1 !py-0 !text-[10px]">
+                  <Pill tone={EFFECT_TONE[step.effect] ?? "neutral"} className="!px-1 !py-0 !text-[11px]">
                     {step.effect.replace(/_/g, " ").toLowerCase()}
                   </Pill>
-                  <Pill tone={SAFETY_TONE[step.safety] ?? "neutral"} className="!px-1 !py-0 !text-[10px]">
+                  <Pill tone={SAFETY_TONE[step.safety] ?? "neutral"} className="!px-1 !py-0 !text-[11px]">
                     {step.safety.replace("_", " ").toLowerCase()}
                   </Pill>
                   {step.status !== "OK" ? (
-                    <Pill tone={step.status === "ERROR" ? "fail" : "neutral"} className="!px-1 !py-0 !text-[10px]">
+                    <Pill tone={step.status === "ERROR" ? "fail" : "neutral"} className="!px-1 !py-0 !text-[11px]">
                       {step.status.toLowerCase()}
                     </Pill>
                   ) : null}
@@ -812,7 +812,7 @@ export function TracePanel({
                   <summary className="cursor-pointer list-none text-[11px] text-ink-400 hover:text-ink-600">
                     inputs &amp; output
                   </summary>
-                  <pre className="mt-1 max-h-56 overflow-auto rounded border border-[var(--hairline)] bg-ink-950 px-2.5 py-2 font-mono text-[10.5px] leading-relaxed text-ink-200">
+                  <pre className="mt-1 max-h-56 overflow-auto rounded border border-[var(--hairline)] bg-ink-950 px-2.5 py-2 font-mono text-[11px] leading-relaxed text-ink-200">
 {JSON.stringify({ input: step.input, output: step.output }, null, 2).slice(0, 4000)}
                   </pre>
                 </details>

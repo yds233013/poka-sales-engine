@@ -40,7 +40,7 @@ export function RunModeBadge({
     >
       <Icon className="size-3" strokeWidth={2} aria-hidden />
       {config.label}
-      {kind === "live" && model ? <span className="font-mono text-[10.5px] opacity-75">{model}</span> : null}
+      {kind === "live" && model ? <span className="font-mono text-[11px] opacity-75">{model}</span> : null}
     </span>
   );
 }
