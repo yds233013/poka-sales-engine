@@ -12,7 +12,9 @@ npm run eval -- --mode DETERMINISTIC
 npm run eval -- --scenario hero-substitution
 ```
 
-Or open **/agent-lab** and press *Run evaluation suite*.
+Or open **/evaluations** and press *Run evaluation suite*. That page also shows the captured live suite, scenario by scenario, and the adversarial runs.
+
+On a deployment with `PUBLIC_DEMO=true`, adaptive rows report *Not run*: live model calls are switched off so visitors cannot spend API credit ([DEPLOYMENT.md](DEPLOYMENT.md)).
 
 Without `ANTHROPIC_API_KEY`, adaptive scenarios report **NOT_RUN** with the
 reason. They do not report zero, they do not report a pass, and they never
@@ -112,7 +114,7 @@ Running a scenario re-analyses a case from scratch, rewriting its
 recommendation, quote and approvals. So `prepareScenarioCase` *copies* a
 seeded reference — same customer, site, contact, subject and body — runs the
 copy, and deletes it afterwards. Two things follow: running the eval suite
-from the Agent Lab no longer rewrites the case the product demos with, and two
+from the Evaluations page no longer rewrites the case the product demos with, and two
 scenarios touching the same reference are no longer order-dependent.
 
 ### The scenario file is checked
@@ -194,7 +196,7 @@ false positives in the grounding validator, and are described in
 ## Adding one
 
 Append to `EVAL_SCENARIOS` in `src/lib/eval/scenario.ts`. Nothing else is
-needed — the runner, the CLI, the Agent Lab dashboard and the suite tests all
+needed — the runner, the CLI, the Evaluations page and the suite tests all
 read from that array.
 
 ## What a failing eval means
