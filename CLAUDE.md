@@ -66,3 +66,22 @@ these, that is the thing to discuss before writing it.
   its recommendation, quote and approvals, so REQ-2041 would carry whatever the
   last test left behind — and Vitest orders files by duration, not by name.
   Clone it (`CaseTracker.clone`, `prepareScenarioCase`) and delete the copy.
+
+## Presentation
+
+- **One status vocabulary.** Case states are named and coloured by
+  `src/lib/status.ts` and `StatusBadge`. A state described three ways looks
+  like three states.
+- **Captured results are labelled, never mixed.** `src/lib/eval/captured.ts`
+  holds measured live runs with model and date. The UI shows them as captured;
+  a run started in the product renders from the database. Update figures and
+  date together, and never add a number that was not measured.
+- **Deterministic, scripted and live runs are always distinguished**
+  (`RunModeBadge`). A scripted run shown as "adaptive" presents a test as
+  evidence of model behaviour.
+- **Live model spend is gated in `runAdaptiveRequest`**, not only in the UI.
+  `PUBLIC_DEMO=true` turns live runs off; see `docs/DEPLOYMENT.md`.
+- **Workspace figures come from the case's own records.** Nothing about
+  REQ-2041 is special-cased; `src/lib/demo.ts` only names which case the
+  overview suggests as a walkthrough.
+

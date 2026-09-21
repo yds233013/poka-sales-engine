@@ -17,6 +17,23 @@ produce is rejected before it reaches a customer.
 > it is synthetic, generated for this build. It is not connected to Poka or to any real system, no
 > private Poka systems or architecture were involved, and it is not a production Poka product.
 
+![The REQ-2041 case: PX-440 recommended in place of AX-220, which fails fluid temperature; 8 units from Dallas and 4 from Houston; $102,808.88; release blocked on three approvals](docs/assets/case-req-2041.png)
+
+<table>
+<tr>
+<td width="50%"><img src="docs/assets/case-validation.png" alt="Technical validation: every requirement against five candidates, each value cited to a data-sheet section, hard failures in red"><br><sub><b>Technical validation.</b> Requirement × candidate. Every value is the one the rule engine compared, with the data-sheet section it came from. AX-220 fails at 120 °C; PX-400 and PX-422 fail on flow.</sub></td>
+<td width="50%"><img src="docs/assets/overview.png" alt="Overview: lanes for awaiting approval, needs review, ready to send and not analysed; a queue ordered by what blocks a quote soonest"><br><sub><b>Overview.</b> Organised by what needs a person: decide an approval, review what the engine could not finish, send what is ready.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/assets/agent-lab.png" alt="Agent lab: the ownership boundary from request to customer-safe output"><br><sub><b>Agent lab.</b> Who decides what, a real run against claude-sonnet-5, how investigation depth changes with the request, and the full MCP toolbox.</sub></td>
+<td width="50%"><img src="docs/assets/evaluations.png" alt="Evaluations: 14 of 14 business outcomes correct, 13 of 14 full passes, zero safety violations"><br><sub><b>Evaluations.</b> 14/14 business outcomes, 13/14 full passes — reported as the different things they are — and the adversarial runs.</sub></td>
+</tr>
+</table>
+
+**Where to start:** run it, open the Overview, and follow the suggested walkthrough into REQ-2041.
+The [demo script](docs/DEMO.md) has a 60-second and a 3-minute version. Deploying it:
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
 ---
 
 ## 1. The problem
@@ -166,8 +183,8 @@ executed trace, not a narration written afterwards. Chain-of-thought is never ca
 | `src/lib/ai/` | Provider abstraction, the deterministic extractor, the mock provider, the optional Claude provider, mode availability. |
 | `src/lib/workflow.ts` | Human transitions — approval decisions, quote release, response edits, case completion. Re-derives its own preconditions. |
 | `prisma/seed/` | The synthetic world: catalog generator, rules, documentation, commercial data, accounts, scenarios. |
-| `tests/unit/` | 261 tests over the engines, MCP contracts, guardrails, grounding and the scenario set, with no database. |
-| `tests/integration/` | 117 tests running the real orchestrator, the real MCP server and the adaptive runtime against a real seeded PostgreSQL database. |
+| `tests/unit/` | 267 tests over the engines, MCP contracts, guardrails, grounding and the scenario set, with no database. |
+| `tests/integration/` | 122 tests running the real orchestrator, the real MCP server and the adaptive runtime against a real seeded PostgreSQL database. |
 
 **Where to look first**, if you are reviewing rather than running it:
 
@@ -181,6 +198,8 @@ executed trace, not a narration written afterwards. Chain-of-thought is never ca
 | What humans control | [`src/lib/workflow.ts`](src/lib/workflow.ts) |
 | How it is scored | [`src/lib/eval/scenario.ts`](src/lib/eval/scenario.ts) and [`runner.ts`](src/lib/eval/runner.ts) |
 | Measured live results | [`src/lib/eval/captured.ts`](src/lib/eval/captured.ts) |
+| The case workspace UI | [`src/components/workspace/`](src/components/workspace) — decision summary, validation matrix, evidence, fulfillment, commercials, activity |
+| The live-spend gate | `liveAdaptivePolicy` in [`src/lib/ai/capability.ts`](src/lib/ai/capability.ts), enforced in `runAdaptiveRequest` |
 | The invariants that must not break | [`CLAUDE.md`](CLAUDE.md) |
 
 ## 5. The human approval model
@@ -305,7 +324,7 @@ policy thresholds make it end there.
 | **REQ-2019** Redwood Municipal | A closed case, end to end, with the full audit trail behind it. |
 | **REQ-2046** Cardinal (Bayonne) | Unworked — run the analysis live during a demo. |
 
-See [`docs/DEMO.md`](docs/DEMO.md) for a 4-minute script.
+See [`docs/DEMO.md`](docs/DEMO.md) for a 60-second and a 3-minute script.
 
 ## 9. Running locally
 
@@ -348,7 +367,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 ANTHROPIC_MODEL=claude-sonnet-5
 ```
 
-With a key present, **adaptive mode** also becomes selectable in Agent Lab and on a case. The
+With a key present, **adaptive mode** also becomes selectable in the Agent lab and on a case (unless `PUBLIC_DEMO=true` — see [DEPLOYMENT.md](docs/DEPLOYMENT.md)). The
 model then directs the investigation over MCP, subject to turn, tool, time and loop budgets, and
 its conclusion is handed to the same deterministic finalizer.
 
@@ -367,8 +386,8 @@ No pricing, inventory, compatibility or approval decision passes through it.
 | `npm run db:setup` | Generate client, push schema, seed and run the agent |
 | `npm run db:seed` | Re-seed only (resets the demo to its starting state) |
 | `npm run db:studio` | Prisma Studio |
-| `npm run test:unit` | 261 engine, contract, guardrail, grounding and scenario tests; no database |
-| `npm run test:integration` | 117 tests against a throwaway seeded database |
+| `npm run test:unit` | 267 engine, contract, guardrail, grounding and scenario tests; no database |
+| `npm run test:integration` | 122 tests against a throwaway seeded database |
 | `npm run eval` | Evaluation suite, both modes, printed table |
 | `npm test` | Both suites |
 | `npm run typecheck` | `tsc --noEmit` |
@@ -378,7 +397,7 @@ No pricing, inventory, compatibility or approval decision passes through it.
 
 ## 10. Testing
 
-**378 tests** — 261 unit, 117 integration. The split is deliberate: the engines take plain data and return plain data, never
+**389 tests** — 267 unit, 122 integration. The split is deliberate: the engines take plain data and return plain data, never
 importing Prisma, which is what makes it practical to write adversarial tests for pricing, ATP and
 approval policy without a fixture scaffold.
 

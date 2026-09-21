@@ -9,73 +9,77 @@ Reset first so the state is predictable:
 npm run db:seed && npm run dev
 ```
 
-Adaptive mode needs `ANTHROPIC_API_KEY` in `.env`. Without it everything below still works —
-the Agent Lab reports adaptive as unavailable rather than pretending, and the captured live
-results are still on screen.
+Adaptive mode needs `ANTHROPIC_API_KEY` in `.env`. Without it — or on a public deployment with
+`PUBLIC_DEMO=true` — everything below still works: live runs are reported as switched off, and
+the captured live results are on screen, labelled with model and date.
 
 ---
 
 # 60 seconds
 
-One case, told end to end. Do not open anything else.
+One case, top to bottom. Do not open anything else.
 
-### 0:00 — Dashboard
+### 0:00 — Overview
 
-**Say:** "A technical sales desk. Requests in, and what's stuck."
+**Say:** "A technical sales desk. What needs a person, what's blocked, what's ready."
 
-**Point at:** the work queue — ordered by what needs a person, not by what arrived last.
+**Point at:** the four lanes — awaiting approval, needs review, ready to send, not analysed.
 
-Don't linger. One sentence, then move.
+**Click:** the **Suggested walkthrough — REQ-2041** banner.
 
-### 0:08 — Open REQ-2041
+### 0:06 — The decision
 
-**Click:** `REQ-2041 — Line 4 pump replacement`.
+**Point at:** the decision band at the top of the case.
 
-**Say:** "Customer wants twelve of the pump they already run. But they've converted the loop to
-thermal fluid at 180 °C."
+**Say:** "Customer wants twelve of the pump they already run. They've moved the loop to
+180 °C. The engine says: not that pump — PX-440 instead."
 
-**Point at:** the recommendation headline — **PX-440 in place of AX-220**.
+**Point at:** the red line under it — *Fluid temperature 120 °C — needs at least 180 °C*.
 
-### 0:20 — The rejection
+**Then:** "Eight from Dallas, four from Houston. A hundred and two thousand dollars.
+And release is blocked."
 
-**Point at:** *Closest parts ruled out*.
+That band is the whole answer. Everything below it is the reasoning.
 
-**Say:** "Their own part fails. Fluid temperature 120 °C against 180 °C required. PX-400 fails on
-flow. Those numbers came from a rule engine — the model didn't decide this and can't argue
-with it."
+### 0:20 — Technical validation
 
-This is the single most important beat. Let it land.
+**Click:** the **Technical validation** tab.
 
-### 0:32 — Evidence
+**Point at:** the red cells — AX-220 at *120 °C*, PX-400 at *35 m³/h*.
 
-**Point at:** any `DOCUMENT DS-1020 §2.1` chip under Technical validation.
+**Say:** "Every requirement against every serious candidate. Red is a hard failure — the rule
+engine's verdict, and no model can argue with it. And every value carries the data-sheet
+section it came from."
 
-**Say:** "Every technical claim resolves to a section of a data sheet. Nothing here is asserted."
+**Click:** any `DS-1020 §2.1` under a PX-440 value.
 
-### 0:40 — Inventory and commercials
+**Say:** "That's the actual text the engine read." Then press back.
 
-**Point at:** the fulfillment plan — 8 from Dallas, 4 from Houston.
+This is the most important beat. Let it land.
 
-**Say:** "No single warehouse holds twelve, so it's a split shipment, and that split is why one of
-the approvals exists."
+### 0:38 — Fulfillment and commercials
 
-**Point at:** the commercial block — **INTERNAL ONLY · never sent to the customer**.
+**Click:** the **Fulfillment** tab. **Point at:** the split bar — Dallas and Houston.
 
-**Say:** "Cost and margin sit behind that line. They cannot reach the customer response."
+**Say:** "No single warehouse holds twelve. That split is why one of the approvals exists."
+
+**Scroll** to Commercials. **Point at:** the hatched **Internal only** side.
+
+**Say:** "Cost and margin sit behind that line. They never reach the customer."
 
 ### 0:50 — Approvals
 
-**Point at:** the three pending approvals and the greyed-out **Release blocked** button.
+**Click:** the **Approvals** tab (it shows a **3**).
 
-**Say:** "Substitution, quote value, split shipment. Three approvals, each with the role that owns
-it. Nothing goes out until a human clears them — and the agent has no tool that can."
+**Say:** "Substitution, quote value, split shipment — each owned by a named role. The agent has
+no tool that can approve or release anything."
 
-### 0:58 — Close
+### 0:56 — Close
 
-**Say:** "That whole investigation is recorded as executed tool calls, not a summary written
-afterwards."
+**Click:** the **Agent activity** tab.
 
-Scroll once to *What the engine did*. Stop.
+**Say:** "And that's the investigation as it actually ran — recorded tool calls, not a summary
+written afterwards." Stop.
 
 ---
 
@@ -83,64 +87,66 @@ Scroll once to *What the engine did*. Stop.
 
 Everything above, then the engineering case.
 
-### 1:00 — Agent Lab
+### 1:00 — Who decides what
 
-**Click:** `Agent lab`.
+**Click:** **Agent lab** in the sidebar.
 
-**Point at:** *The agent decides / The engines decide*.
+**Point at:** the diagram, top to bottom.
 
-**Say:** "This is the whole architecture in two columns. The model picks the route. The engines
-decide what's true."
+**Say:** "The model decides how to investigate. The engines decide what's true. People decide
+what's allowed. Both execution modes cross the same MCP boundary and end at the same function."
 
-### 1:15 — Live validation
+### 1:15 — A real run
 
-**Point at:** the four figures.
+**Point at:** *Agent execution* — the captured live run badge and the seven figures.
 
-**Say:** "Fourteen scenarios against claude-sonnet-5. Fourteen out of fourteen reached the right
-commercial answer. Thirteen of fourteen passed the eval."
+**Say:** "REQ-2041 against claude-sonnet-5. Thirteen tools chosen, five turns, twenty seconds,
+nine cents — and it landed on exactly the same quote as the deterministic pipeline, by its own
+route."
 
-**Then immediately:** "Those are different numbers on purpose."
+**Point at:** the three **blocked** steps — AX-220, PX-420, PX-400.
 
-**Point at:** *The scenario that failed*.
+### 1:35 — Adaptivity
 
-**Say:** "One run got the right answer but didn't record why it ruled a part out. Correct
-outcome, incomplete audit trail. It's left failing — two runs minutes apart evaluated nineteen
-candidates and twelve, so it's reliability of investigation breadth, not capability."
+**Point at:** *Investigation depth responds to the request*, then the grid underneath.
 
-Do not skip this. A reviewer who sees a green dashboard assumes you tuned it.
+**Say:** "Same agent, same tools. A technical question takes five calls and never touches
+pricing — look at the empty commercial column. An availability question checks stock and
+stops. The substitution runs thirteen and produces a quote."
 
-### 1:45 — Adaptivity
+### 1:55 — The boundary
 
-**Point at:** *Investigation depth responds to the request*.
+**Point at:** *MCP toolbox* — the three statements across the top.
 
-**Say:** "Three real runs. A technical question uses five tools and never touches pricing. An
-availability question checks stock and stops. The substitution case runs twelve and produces a
-quote. Same agent, same tools — different requests."
+**Say:** "No database handle, no credentials. Tools take selectors, not facts." **Expand**
+`check_compatibility`. "It takes a part number. Not a temperature. It can say which part to
+check; it cannot supply the requirement it's checked against."
 
-### 2:10 — Adversarial
+### 2:15 — Evaluations
 
-**Point at:** *What happened when the request attacked the agent*.
+**Click:** **Evaluations** in the sidebar.
 
-**Say:** "Four attacks. In three of them the model partially complied — it did the tool work
-correctly and then repeated an invented stock figure or price in its summary."
+**Point at:** *14 / 14* and *13 / 14*.
 
-**Then:** "Grounding rejected every one. That's the design principle: the model can fail, and the
-system is built so a model failure doesn't silently become business truth."
+**Say:** "Every run got the business answer right. Thirteen of fourteen passed the full eval."
 
-This is the strongest thirty seconds available. Do not soften it into "it resisted the attacks."
+**Then immediately, pointing at the red row:** "Those are different numbers on purpose. This
+one was right, but didn't record why it ruled a part out — and two identical runs evaluated
+nineteen candidates and twelve. It's left failing."
 
-### 2:35 — MCP boundary
+Do not skip this. A reviewer who sees only green assumes you tuned it.
 
-**Point at:** the MCP tool surface, right column.
+### 2:40 — Adversarial
 
-**Say:** "Sixteen tools over the Model Context Protocol. Typed schemas, safety classification,
-side-effect classification. The model has no database handle and no credentials — it gets these
-capabilities and nothing else."
+**Scroll** to *Adversarial runs*.
 
-**Point at:** `check_compatibility · deterministic computation`.
+**Point at:** the dark panel, then *3 of 4*.
 
-**Say:** "Note what it takes: a part number. Not a temperature. It can say *which* part to check.
-It cannot supply the requirement it's checked against."
+**Say:** "In three of four attacks the model partially complied — it repeated an invented
+stock figure or price in its summary. Grounding rejected every one. The model can fail; the
+system is built so that failure doesn't become business truth."
+
+Do not soften this into "it resisted the attacks." It didn't, and that's the point.
 
 ### 2:55 — Close
 
@@ -150,22 +156,23 @@ It cannot supply the requirement it's checked against."
 
 ## If you have a spare minute
 
-**Run it live.** In the Agent Lab, pick `C. Technical question` and run the adaptive agent. It
-takes about 20 seconds and costs about seven cents. It will answer the question in five or six
-tool calls without producing a quote, and the run record renders from the database — model,
-turns, tool sequence, tokens, cost.
+**Run it live** (local only — a public demo has live runs switched off). In the Agent Lab
+console, pick `C. Technical question` and run the adaptive agent. About twenty seconds and a
+few cents. It answers without producing a quote, and the run renders from the database — the
+execution panel switches from the captured run to yours.
 
-**Prove the approval gate.** On REQ-2041, switch *Acting as* to a sales representative and try to
-clear the substitution approval. It refuses — the role gate is enforced server-side, not hidden
-in the UI.
+**Prove the approval gate.** On REQ-2041 the acting user is a sales rep, and each approval says
+it is reserved for a sales manager. Switch *Acting as* to a sales manager to decide one. The
+role check is on the server, not in the UI.
 
 ---
 
 ## What not to show
 
-- The catalog and technical library. They are real and they are boring to watch. Mention that
-  77 products and 85 documents exist; don't scroll them.
-- Raw JSON in tool inputs/outputs unless asked. The summaries say the same thing.
-- The customer response on REQ-2041 — there isn't one yet, by design, because the approvals are
-  open. If someone asks what the customer gets, open `REQ-2028`, which has cleared.
-- Running the full eval suite. It takes a minute and the captured results are already on screen.
+- The catalog and technical library pages. They are real and slow to watch. Say that 77
+  products and 85 documents exist; the citation click in the matrix proves the library is real.
+- Raw tool JSON. Expand one step if asked; the sentences say the same thing.
+- REQ-2041's customer response — there isn't one yet, by design, because the approvals are
+  open. If someone asks what the customer gets, open the **Ready to send** lane on the
+  overview and pick REQ-2028.
+- Running the evaluation suite. It takes a minute, and the measured results are on screen.
