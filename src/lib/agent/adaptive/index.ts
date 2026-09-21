@@ -20,7 +20,8 @@
 import type { PrismaClient } from "@/generated/prisma";
 import type { ProductView, RequirementView } from "@/lib/domain/types";
 import { getAIProvider } from "@/lib/ai";
-import { adaptiveApiKey, adaptiveModel } from "@/lib/ai/capability";
+import { adaptiveApiKey, adaptiveModel, liveAdaptivePolicy } from "@/lib/ai/capability";
+import { takeLiveRunSlot } from "@/lib/ai/rate-limit";
 import { inferFromIncumbent } from "@/lib/ai/extract";
 import { recordAudit } from "@/lib/audit";
 import { ToolBus } from "@/lib/agent/toolbus";
@@ -80,6 +81,20 @@ export async function runAdaptiveRequest(
   // from real credentials talks to a provider. Recording which of the two ran
   // is the difference between reporting a live agent result and inventing one.
   const scripted = Boolean(options.modelClient);
+
+  // The spend gate, enforced here because every live model call in the
+  // product passes through this function — the case page, the Lab console, the
+  // eval suite and the CLI. A scripted client bills nothing and is exempt.
+  if (!scripted) {
+    const policy = liveAdaptivePolicy();
+    if (!policy.allowed) throw new AdaptiveUnavailableError(policy.reason ?? "Live adaptive execution is not available.");
+    if (!takeLiveRunSlot()) {
+      throw new AdaptiveUnavailableError(
+        "The hourly limit on live model runs for this deployment has been reached. Try again later, or use the deterministic workflow.",
+      );
+    }
+  }
+
   const modelClient: ModelClient | null = options.modelClient ?? (apiKey ? new AnthropicModelClient(apiKey) : null);
   if (!modelClient) {
     throw new AdaptiveUnavailableError(

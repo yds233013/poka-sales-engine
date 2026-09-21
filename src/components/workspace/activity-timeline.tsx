@@ -2,17 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import {
-  BadgeDollarSign,
-  BookOpen,
-  Boxes,
-  ChevronRight,
-  CircleCheckBig,
-  ScanSearch,
-  ShieldCheck,
-  UserRound,
-  type LucideIcon,
-} from "lucide-react";
+import { ChevronRight } from "lucide-react";
+import { PHASE, phaseOf } from "@/components/tool-phase";
 import { Mono } from "@/components/ui/primitives";
 import { cn } from "@/lib/cn";
 
@@ -39,44 +30,6 @@ export interface ActivityStep {
   output: unknown;
   evidence: { id: string; claim: string; docNumber: string | null; anchor: string | null }[];
 }
-
-type Phase = { label: string; icon: LucideIcon; tone: string };
-
-/** Which part of the investigation a tool belongs to. */
-const PHASE: Record<string, Phase> = {
-  understand: { label: "Understand", icon: UserRound, tone: "bg-ink-100 text-ink-600" },
-  technical: { label: "Technical", icon: ScanSearch, tone: "bg-accent-50 text-accent-700" },
-  evidence: { label: "Evidence", icon: BookOpen, tone: "bg-accent-50 text-accent-700" },
-  fulfillment: { label: "Fulfillment", icon: Boxes, tone: "bg-pass-50 text-pass-700" },
-  commercial: { label: "Commercial", icon: BadgeDollarSign, tone: "bg-warn-50 text-warn-700" },
-  policy: { label: "Policy", icon: ShieldCheck, tone: "bg-fail-50 text-fail-700" },
-  conclude: { label: "Conclude", icon: CircleCheckBig, tone: "bg-ink-900 text-white" },
-};
-
-const TOOL_PHASE: Record<string, keyof typeof PHASE> = {
-  resolve_customer: "understand",
-  get_request_state: "understand",
-  resolve_sku: "understand",
-  get_customer_history: "understand",
-  search_catalog: "technical",
-  get_product: "technical",
-  find_substitutes: "technical",
-  screen_candidates: "technical",
-  check_compatibility: "technical",
-  apply_adapter: "technical",
-  search_technical_docs: "evidence",
-  get_inventory: "fulfillment",
-  check_inventory: "fulfillment",
-  build_fulfillment_plan: "fulfillment",
-  calculate_price: "commercial",
-  calculate_freight: "commercial",
-  check_margin: "commercial",
-  evaluate_approvals: "policy",
-  create_quote_draft: "conclude",
-  request_clarification: "conclude",
-  respond_with_information: "conclude",
-  escalate_for_review: "conclude",
-};
 
 const EFFECT_LABEL: Record<string, string> = {
   READ_ONLY: "read",
@@ -125,7 +78,7 @@ export function ActivityTimeline({ steps, adaptive }: { steps: ActivityStep[]; a
         {/* The spine. */}
         <span className="absolute bottom-6 left-[31px] top-6 w-px bg-[var(--hairline)]" aria-hidden />
         {shown.map((step) => {
-          const phase = PHASE[TOOL_PHASE[step.toolName] ?? "technical"];
+          const phase = PHASE[phaseOf(step.toolName)];
           const Icon = phase.icon;
           const isOpen = open === step.id;
           return (

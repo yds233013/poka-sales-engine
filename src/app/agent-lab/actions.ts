@@ -212,5 +212,6 @@ export async function runEvalSuite(): Promise<EvalSuiteResult> {
     rows.push({ scenarioId: scenario.id, title: scenario.title, deterministic, adaptive });
   }
   revalidatePath("/agent-lab");
+  revalidatePath("/evaluations");
   return { ranAt: new Date().toISOString(), adaptiveAvailable: isAdaptiveAvailable(), rows };
 }

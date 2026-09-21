@@ -29,8 +29,35 @@ export function adaptiveApiKey(): string | null {
   return key && key.length > 0 ? key : null;
 }
 
+/**
+ * Whether this deployment may spend model credit on a live adaptive run.
+ *
+ * A key being present is not sufficient on a public deployment: anyone with
+ * the link could run the suite in a loop. Setting PUBLIC_DEMO=true turns live
+ * execution off regardless of the key, and the product falls back to the
+ * captured live runs, which are labelled as such. ALLOW_LIVE_ADAPTIVE=true
+ * re-enables it deliberately — for an authenticated or rate-limited demo.
+ *
+ * This is checked in the UI and, independently, inside runAdaptiveRequest, so
+ * calling a server action directly cannot get around it.
+ */
+export function liveAdaptivePolicy(): { allowed: boolean; reason: string | null } {
+  if (!adaptiveApiKey()) {
+    return { allowed: false, reason: "No ANTHROPIC_API_KEY is configured, so no model is available to direct an investigation." };
+  }
+  if (process.env.PUBLIC_DEMO?.trim() === "true" && process.env.ALLOW_LIVE_ADAPTIVE?.trim() !== "true") {
+    return {
+      allowed: false,
+      reason:
+        "Live model runs are switched off on this public demo so visitors cannot spend API credit. The captured live runs are shown instead.",
+    };
+  }
+  return { allowed: true, reason: null };
+}
+
 export function executionModes(): ModeAvailability[] {
-  const key = adaptiveApiKey();
+  const policy = liveAdaptivePolicy();
+  const key = policy.allowed ? adaptiveApiKey() : null;
   return [
     {
       mode: "DETERMINISTIC",
@@ -47,14 +74,12 @@ export function executionModes(): ModeAvailability[] {
       label: "Adaptive agent",
       description:
         "The model chooses which MCP tools to call and in what order. The same deterministic engines still decide compatibility, stock, price and approvals.",
-      unavailableReason: key
-        ? null
-        : "No ANTHROPIC_API_KEY is configured, so no model is available to direct an investigation.",
+      unavailableReason: key ? null : policy.reason,
       model: key ? adaptiveModel() : null,
     },
   ];
 }
 
 export function isAdaptiveAvailable(): boolean {
-  return adaptiveApiKey() !== null;
+  return liveAdaptivePolicy().allowed;
 }

@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Panel, PanelHeader, Button, Pill, SectionLabel, Mono, statusLabel } from "@/components/ui/primitives";
+import { Panel, Button, Pill, SectionLabel, Mono, statusLabel } from "@/components/ui/primitives";
 import { duration } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { runInLab, type LabRunResult } from "@/app/agent-lab/actions";
@@ -65,11 +65,6 @@ export function RunConsole({
 
   return (
     <Panel>
-      <PanelHeader
-        title="Run an investigation"
-        subtitle="Pick a seeded scenario or paste a request, choose how it should be orchestrated, and inspect what actually executed."
-      />
-
       {/* Execution mode */}
       <div className="border-b border-[var(--hairline)] px-4 py-3">
         <SectionLabel>Execution mode</SectionLabel>

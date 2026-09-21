@@ -377,3 +377,33 @@ describe("availability", () => {
     }
   });
 });
+
+describe("public demo spend gate", () => {
+  it("refuses a live run on a public demo even when called directly", async () => {
+    const saved = { ...process.env };
+    try {
+      process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+      process.env.PUBLIC_DEMO = "true";
+      delete process.env.ALLOW_LIVE_ADAPTIVE;
+      const id = await ephemeralCase("Gate", "Please quote 5 x MX-160 for the Charlotte plant at 90 C.");
+      // No modelClient: this is the path that would bill a provider.
+      await expect(runAdaptiveRequest(db, id, { model: MODEL })).rejects.toThrow(/public demo/i);
+      // Nothing was started — no run row, nothing to clean up.
+      expect(await db.agentRun.count({ where: { requestId: id } })).toBe(0);
+    } finally {
+      process.env = saved;
+    }
+  });
+
+  it("still allows a scripted run, which bills nothing", async () => {
+    const saved = { ...process.env };
+    try {
+      process.env.PUBLIC_DEMO = "true";
+      const id = await ephemeralCase("Scripted", "Please quote 5 x MX-160 for the Charlotte plant at 90 C.");
+      const result = await run(id, [{ calls: [{ name: "get_request_state", input: {} }] }]);
+      expect(result.runId).toBeTruthy();
+    } finally {
+      process.env = saved;
+    }
+  });
+});
