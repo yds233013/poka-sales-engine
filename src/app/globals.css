@@ -166,3 +166,8 @@ summary::-webkit-details-marker { display: none; }
     border: none !important;
   }
 }
+
+/* Scrollable without a visible bar — for tab strips that overflow on narrow
+   screens, where a scrollbar under the tabs reads as a rendering fault. */
+.scrollbar-none { scrollbar-width: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }

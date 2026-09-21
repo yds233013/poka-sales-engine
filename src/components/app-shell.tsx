@@ -165,9 +165,10 @@ export function AppShell({
             className="flex items-center justify-center gap-2 rounded-md border border-[var(--rail-hairline)] px-2 py-1.5 xl:justify-start"
             title="Independent demonstration project. Every company, person, product, price and document is synthetic. Not affiliated with or used by Poka."
           >
-            <span className="size-1.5 shrink-0 rounded-full bg-warn-500" aria-hidden />
-            <span className="hidden text-[11px] leading-tight text-[var(--rail-text)] xl:block">
-              Synthetic demo data
+            <span className="size-1.5 shrink-0 self-start rounded-full bg-warn-500 xl:mt-1" aria-hidden />
+            <span className="hidden text-[11px] leading-snug xl:block">
+              <span className="block text-[var(--rail-text-strong)]">Synthetic demo data</span>
+              <span className="block text-[var(--rail-text)]">Independent project · not affiliated with Poka</span>
             </span>
           </div>
         </div>

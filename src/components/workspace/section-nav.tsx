@@ -41,7 +41,7 @@ export function SectionNav({
   return (
     <div className="no-print sticky top-0 z-20 -mx-6 mb-5 border-b border-[var(--hairline)] bg-white/95 px-6 backdrop-blur supports-[backdrop-filter]:bg-white/85">
       <div className="flex items-center gap-4">
-        <nav aria-label="Case sections" className="-mb-px flex min-w-0 flex-1 gap-1 overflow-x-auto">
+        <nav aria-label="Case sections" className="scrollbar-none -mb-px flex min-w-0 flex-1 gap-1 overflow-x-auto">
           {sections.map((section) => (
             <a
               key={section.id}

@@ -51,14 +51,14 @@ export function PageHeader({
       ) : eyebrow ? (
         <div className="mb-1 text-[12px] font-medium text-ink-500">{eyebrow}</div>
       ) : null}
+      {/* Title and actions share a row so actions sit in the same place on
+          every page; facts and description span the full width beneath. */}
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-        <div className="min-w-0">
-          <h1 className="t-display text-ink-900">{title}</h1>
-          {meta ? <div className="mt-1.5">{meta}</div> : null}
-          {description ? <p className="t-body mt-1 max-w-3xl text-ink-500">{description}</p> : null}
-        </div>
+        <h1 className="t-display min-w-0 text-ink-900">{title}</h1>
         {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
       </div>
+      {meta ? <div className="mt-1.5">{meta}</div> : null}
+      {description ? <p className="t-body mt-1 max-w-3xl text-ink-500">{description}</p> : null}
     </div>
   );
 }

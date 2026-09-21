@@ -11,5 +11,5 @@
 export const SPOTLIGHT = {
   reference: "REQ-2041",
   pitch:
-    "A customer asks for twelve of the pump they already run, after moving the loop to 180 °C. Watch the engine rule their part out, pick a substitute, split the order across two warehouses and hold the quote for three approvals.",
+    "A customer asks for twelve of the pump they already run, after moving the loop to 180 °C. The engine rules their part out, picks a substitute on cited evidence, splits the order across two warehouses and holds the quote for three approvals.",
 };
