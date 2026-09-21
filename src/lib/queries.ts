@@ -13,9 +13,18 @@ export { cents, dec };
 
 const OPEN_STATUSES = ["NEW", "ANALYZING", "NEEDS_REVIEW", "READY_FOR_APPROVAL", "APPROVED", "RESPONSE_READY"] as const;
 
+/**
+ * Evaluation copies are throwaway clones of real cases. They are deleted when a
+ * scenario finishes, but a product view should not depend on that having
+ * happened — one that slipped through would sit in the inbox looking exactly
+ * like the case it was cloned from.
+ */
+const NOT_EVAL = { NOT: { reference: { startsWith: "EVAL-" } } };
+
 export async function getDashboard() {
   const [requests, approvals, quotes, runs] = await Promise.all([
     prisma.salesRequest.findMany({
+      where: NOT_EVAL,
       include: {
         customer: true,
         owner: true,
@@ -26,12 +35,15 @@ export async function getDashboard() {
       orderBy: { receivedAt: "desc" },
     }),
     prisma.approval.findMany({
-      where: { status: { in: ["PENDING", "CHANGES_REQUESTED"] } },
+      where: { status: { in: ["PENDING", "CHANGES_REQUESTED"] }, request: NOT_EVAL },
       include: { request: { include: { customer: true } }, quote: true },
       orderBy: { createdAt: "asc" },
     }),
-    prisma.quote.findMany({ include: { request: true } }),
-    prisma.agentRun.findMany({ where: { durationMs: { not: null } }, select: { durationMs: true } }),
+    prisma.quote.findMany({ where: { request: NOT_EVAL }, include: { request: true } }),
+    prisma.agentRun.findMany({
+      where: { durationMs: { not: null }, request: NOT_EVAL },
+      select: { durationMs: true },
+    }),
   ]);
 
   const open = requests.filter((r) => (OPEN_STATUSES as readonly string[]).includes(r.status));
@@ -80,6 +92,7 @@ export function ageHours(from: Date): number {
 
 export async function getInbox() {
   return prisma.salesRequest.findMany({
+    where: NOT_EVAL,
     include: {
       customer: true,
       site: true,
@@ -140,6 +153,7 @@ export type CaseDetail = NonNullable<Awaited<ReturnType<typeof getCase>>>;
 
 export async function getApprovalQueue() {
   return prisma.approval.findMany({
+    where: { request: NOT_EVAL },
     include: {
       request: { include: { customer: true, owner: true } },
       quote: true,
@@ -260,6 +274,7 @@ export async function getCustomers() {
       sites: true,
       contacts: true,
       requests: {
+        where: NOT_EVAL,
         include: { quotes: { orderBy: { createdAt: "desc" }, take: 1 } },
         orderBy: { receivedAt: "desc" },
       },

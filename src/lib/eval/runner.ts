@@ -75,9 +75,29 @@ export interface RunScenarioOptions {
   asOf?: Date;
 }
 
+/** Prefix every throwaway evaluation case carries. Product views exclude it. */
+export const EVAL_REFERENCE_PREFIX = "EVAL-";
+
+/**
+ * Delete evaluation copies left behind by a run that never reached its
+ * cleanup — a killed process cannot execute a finally block.
+ *
+ * Only copies older than `olderThanMs` are touched, so a suite running
+ * concurrently in another tab keeps the cases it is still using.
+ */
+export async function sweepOrphanedEvalCases(prisma: PrismaClient, olderThanMs = 10 * 60_000): Promise<number> {
+  const { count } = await prisma.salesRequest.deleteMany({
+    where: {
+      reference: { startsWith: EVAL_REFERENCE_PREFIX },
+      createdAt: { lt: new Date(Date.now() - olderThanMs) },
+    },
+  });
+  return count;
+}
+
 /** Reference for a throwaway evaluation case. Unique per run. */
 function evalReference(scenarioId: string): string {
-  return `EVAL-${scenarioId.toUpperCase().slice(0, 18)}-${Date.now().toString(36)}-${Math.random()
+  return `${EVAL_REFERENCE_PREFIX}${scenarioId.toUpperCase().slice(0, 18)}-${Date.now().toString(36)}-${Math.random()
     .toString(36)
     .slice(2, 6)
     .toUpperCase()}`;
@@ -192,6 +212,25 @@ export async function runScenario(
   }
 
   const { requestId, ephemeral } = await prepareScenarioCase(prisma, scenario);
+  // Cleanup lives in a finally, not at the end of the happy path. A scenario
+  // interrupted between creating its throwaway case and scoring it — an
+  // aborted request, a dev-server reload — used to leave the copy behind,
+  // where it sat in the inbox looking like a duplicate of the case it cloned.
+  try {
+    return await executeScenario(prisma, scenario, mode, options, base, requestId);
+  } finally {
+    if (ephemeral) await prisma.salesRequest.delete({ where: { id: requestId } }).catch(() => undefined);
+  }
+}
+
+async function executeScenario(
+  prisma: PrismaClient,
+  scenario: EvalScenario,
+  mode: EvalMode,
+  options: RunScenarioOptions,
+  base: Omit<EvalResult, "status" | "notRunReason">,
+  requestId: string,
+): Promise<EvalResult> {
   const startedAt = Date.now();
   let groundingIssues: string[] = [];
 
@@ -209,7 +248,6 @@ export async function runScenario(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const scored = await scoreRun(prisma, scenario, requestId, mode, groundingIssues, Date.now() - startedAt);
-    if (ephemeral) await prisma.salesRequest.delete({ where: { id: requestId } }).catch(() => undefined);
     return { ...base, ...scored, status: "ERROR", notRunReason: null, expectedGapReason: null, error: message };
   }
 
@@ -233,7 +271,6 @@ export async function runScenario(
     expectedGapReason: expectedGap ? (scenario.baselineLimitation ?? null) : null,
   };
 
-  if (ephemeral) await prisma.salesRequest.delete({ where: { id: requestId } }).catch(() => undefined);
   return result;
 }
 

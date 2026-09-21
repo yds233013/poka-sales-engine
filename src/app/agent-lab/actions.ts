@@ -15,7 +15,7 @@ import { runSalesRequest } from "@/lib/agent/orchestrator";
 import { runAdaptiveRequest, AdaptiveUnavailableError } from "@/lib/agent/adaptive";
 import { isAdaptiveAvailable } from "@/lib/ai/capability";
 import { EVAL_SCENARIOS, scenarioById } from "@/lib/eval/scenario";
-import { runScenario, prepareScenarioCase, type EvalResult } from "@/lib/eval/runner";
+import { runScenario, prepareScenarioCase, sweepOrphanedEvalCases, type EvalResult } from "@/lib/eval/runner";
 
 /** What a run actually recorded, read back from the database after it ran. */
 export interface LabRunObservability {
@@ -204,6 +204,7 @@ export interface EvalSuiteResult {
 
 /** Run the whole suite in both modes. Adaptive reports NOT_RUN without a key. */
 export async function runEvalSuite(): Promise<EvalSuiteResult> {
+  await sweepOrphanedEvalCases(prisma);
   const rows: EvalSuiteResult["rows"] = [];
   for (const scenario of EVAL_SCENARIOS) {
     const deterministic = await runScenario(prisma, scenario, "DETERMINISTIC");

@@ -12,7 +12,7 @@
 
 import { PrismaClient } from "../src/generated/prisma";
 import { EVAL_SCENARIOS, scenarioById } from "../src/lib/eval/scenario";
-import { runScenario, type EvalMode, type EvalResult } from "../src/lib/eval/runner";
+import { runScenario, sweepOrphanedEvalCases, type EvalMode, type EvalResult } from "../src/lib/eval/runner";
 import { isAdaptiveAvailable } from "../src/lib/ai/capability";
 
 const prisma = new PrismaClient();
@@ -154,6 +154,7 @@ async function main() {
   const gaps: { scenario: string; reason: string }[] = [];
   const executed: EvalResult[] = [];
 
+  await sweepOrphanedEvalCases(prisma);
   for (const scenario of scenarios) {
     console.log(`\n  ${scenario.title}`);
     for (const mode of modes) {

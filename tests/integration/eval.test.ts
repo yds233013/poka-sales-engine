@@ -1,7 +1,8 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { db } from "../support/db";
 import { EVAL_SCENARIOS, scenarioById } from "@/lib/eval/scenario";
-import { runScenario, prepareScenarioCase } from "@/lib/eval/runner";
+import { runScenario, prepareScenarioCase, sweepOrphanedEvalCases } from "@/lib/eval/runner";
+import { getInbox } from "@/lib/queries";
 import { FakeModelClient, substitutionScript } from "../support/fake-model";
 
 afterAll(async () => {
@@ -176,3 +177,36 @@ describe("ephemeral scenario cases", () => {
     await db.salesRequest.delete({ where: { id: requestId } });
   });
 });
+
+describe("orphaned evaluation copies", () => {
+  // Found in use: a suite interrupted mid-run left its throwaway clone of
+  // REQ-2041 in the inbox, where it looked exactly like a duplicate case.
+  it("sweeps copies left behind by a run that never reached its cleanup", async () => {
+    const scenario = scenarioById("hero-substitution")!;
+    const { requestId } = await prepareScenarioCase(db, scenario);
+    await db.salesRequest.update({
+      where: { id: requestId },
+      data: { createdAt: new Date(Date.now() - 60 * 60_000) },
+    });
+
+    expect(await sweepOrphanedEvalCases(db)).toBeGreaterThanOrEqual(1);
+    expect(await db.salesRequest.findUnique({ where: { id: requestId } })).toBeNull();
+  });
+
+  it("leaves a copy a concurrent run is still using", async () => {
+    const scenario = scenarioById("hero-substitution")!;
+    const { requestId } = await prepareScenarioCase(db, scenario);
+    await sweepOrphanedEvalCases(db);
+    expect(await db.salesRequest.findUnique({ where: { id: requestId } })).not.toBeNull();
+    await db.salesRequest.delete({ where: { id: requestId } });
+  });
+
+  it("never shows an evaluation copy in the inbox", async () => {
+    const scenario = scenarioById("hero-substitution")!;
+    const { requestId } = await prepareScenarioCase(db, scenario);
+    const inbox = await getInbox();
+    expect(inbox.some((r) => r.id === requestId)).toBe(false);
+    await db.salesRequest.delete({ where: { id: requestId } });
+  });
+});
+
