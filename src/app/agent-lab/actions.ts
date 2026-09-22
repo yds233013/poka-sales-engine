@@ -14,7 +14,13 @@ import { prisma } from "@/lib/db";
 import { runSalesRequest } from "@/lib/agent/orchestrator";
 import { runAdaptiveRequest, AdaptiveUnavailableError } from "@/lib/agent/adaptive";
 import { isAdaptiveAvailable } from "@/lib/ai/capability";
-import { isPublicDemo, READ_ONLY_REASON } from "@/lib/demo-mode";
+import {
+  EVAL_SUITE_DISABLED_REASON,
+  isPublicDemo,
+  publicDemoRefusal,
+  READ_ONLY_REASON,
+  type PublicDemoRefusal,
+} from "@/lib/demo-mode";
 import { EVAL_SCENARIOS, scenarioById } from "@/lib/eval/scenario";
 import { runScenario, prepareScenarioCase, sweepOrphanedEvalCases, type EvalResult } from "@/lib/eval/runner";
 
@@ -215,13 +221,22 @@ export interface EvalSuiteResult {
   rows: { scenarioId: string; title: string; deterministic: EvalResult; adaptive: EvalResult }[];
 }
 
+/** Either the suite ran, or it was deliberately refused. A fault is neither. */
+export type EvalSuiteResponse = ({ ok: true } & EvalSuiteResult) | PublicDemoRefusal;
+
 /**
  * Run the whole suite in both modes. Adaptive reports NOT_RUN without a key.
  * Refused on a public demo: it runs for over a minute and, with a key, spends
  * model credit on every scenario.
+ *
+ * The refusal is returned, not thrown. Thrown, Next.js reported it to the
+ * browser as an opaque server error and the visitor saw a generic 500 for a
+ * rule this deployment is deliberately enforcing. Anything genuinely
+ * unexpected inside the run still throws, and still looks like a failure.
  */
-export async function runEvalSuite(): Promise<EvalSuiteResult> {
-  if (isPublicDemo()) throw new Error(READ_ONLY_REASON);
+export async function runEvalSuite(): Promise<EvalSuiteResponse> {
+  const refused = publicDemoRefusal(EVAL_SUITE_DISABLED_REASON);
+  if (refused) return refused;
   await sweepOrphanedEvalCases(prisma);
   const rows: EvalSuiteResult["rows"] = [];
   for (const scenario of EVAL_SCENARIOS) {
@@ -231,5 +246,5 @@ export async function runEvalSuite(): Promise<EvalSuiteResult> {
   }
   revalidatePath("/agent-lab");
   revalidatePath("/evaluations");
-  return { ranAt: new Date().toISOString(), adaptiveAvailable: isAdaptiveAvailable(), rows };
+  return { ok: true, ranAt: new Date().toISOString(), adaptiveAvailable: isAdaptiveAvailable(), rows };
 }

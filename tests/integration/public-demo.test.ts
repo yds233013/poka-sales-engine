@@ -13,6 +13,7 @@ import {
   saveResponseAction,
 } from "@/app/actions";
 import { runEvalSuite, runInLab } from "@/app/agent-lab/actions";
+import { EVAL_SUITE_DISABLED_REASON, isPublicDemoRefusal, READ_ONLY_REFUSAL } from "@/lib/demo-mode";
 
 /**
  * PUBLIC_DEMO=true must protect the shared dataset on the server, not only in
@@ -75,6 +76,8 @@ describe("public demo write protection", () => {
     for (const result of results) {
       expect(result.ok).toBe(false);
       expect(result.message).toMatch(/public demo is read-only/i);
+      // Each one is a marked refusal, so the UI can tell it from a failure.
+      expect(isPublicDemoRefusal(result)).toBe(true);
     }
 
     expect(await snapshot()).toEqual(before);
@@ -108,7 +111,21 @@ describe("public demo write protection", () => {
     await db.salesRequest.delete({ where: { id: copy.id } });
   }, 60_000);
 
-  it("refuses the evaluation suite", async () => {
-    await expect(runEvalSuite()).rejects.toThrow(/public demo is read-only/i);
+  it("refuses the evaluation suite as an answer, not as a server error", async () => {
+    // Thrown, this reached the browser as an opaque digest and the visitor saw
+    // a generic 500 for a rule this deployment enforces on purpose.
+    const before = await snapshot();
+    const runsBefore = await db.agentRun.count();
+    const evalCasesBefore = await db.salesRequest.count({ where: { reference: { startsWith: "EVAL-" } } });
+
+    const result = await runEvalSuite();
+
+    expect(result.ok).toBe(false);
+    expect(isPublicDemoRefusal(result)).toBe(true);
+    expect(result).toMatchObject({ refusal: READ_ONLY_REFUSAL, message: EVAL_SUITE_DISABLED_REASON });
+    // Nothing ran: no scenario executed, no throwaway case created.
+    expect(await db.agentRun.count()).toBe(runsBefore);
+    expect(await db.salesRequest.count({ where: { reference: { startsWith: "EVAL-" } } })).toBe(evalCasesBefore);
+    expect(await snapshot()).toEqual(before);
   });
 });

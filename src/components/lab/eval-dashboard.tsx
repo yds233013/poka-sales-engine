@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { Panel, PanelHeader, Button, Pill, EmptyState, Mono, type Tone } from "@/components/ui/primitives";
 import { cn } from "@/lib/cn";
 import { runEvalSuite, type EvalSuiteResult } from "@/app/agent-lab/actions";
+import { suiteNotice } from "@/lib/eval/suite-response";
 import { duration } from "@/lib/format";
 import { useDemoMode } from "@/components/demo-mode";
 
@@ -34,11 +35,21 @@ export function EvalDashboard({ adaptiveAvailable }: { adaptiveAvailable: boolea
   const { readOnly, reason } = useDemoMode();
   const [pending, start] = useTransition();
   const [suite, setSuite] = useState<EvalSuiteResult | null>(null);
+  const [refusal, setRefusal] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
 
+  // A deployment that refuses this says so in its answer. Showing that
+  // sentence is the whole handling: it is an expected reply, not an error.
   const run = () =>
     start(async () => {
-      setSuite(await runEvalSuite());
+      const result = await runEvalSuite();
+      const notice = suiteNotice(result);
+      if (notice !== null) {
+        setRefusal(notice);
+        return;
+      }
+      setRefusal(null);
+      setSuite(result as EvalSuiteResult);
     });
 
   const summary = suite
@@ -57,13 +68,17 @@ export function EvalDashboard({ adaptiveAvailable }: { adaptiveAvailable: boolea
         title="Evaluation"
         subtitle="Every scenario run in both modes and scored against the same domain truth — outcome, SKU resolution, safety, grounding and tool selection."
         actions={
-          <Button variant="secondary" size="sm" onClick={run} disabled={pending || readOnly} title={readOnly ? reason : undefined}>
+          <Button variant="secondary" size="sm" onClick={run} disabled={pending} title={readOnly ? reason : undefined}>
             {pending ? "Running suite…" : suite ? "Re-run suite" : "Run evaluation suite"}
           </Button>
         }
       />
 
-      {readOnly ? (
+      {refusal ? (
+        <div role="status" className="border-b border-[var(--hairline)] bg-ink-50 px-4 py-2.5">
+          <p className="text-[12px] text-ink-600">{refusal}</p>
+        </div>
+      ) : readOnly ? (
         <div className="border-b border-[var(--hairline)] bg-ink-50 px-4 py-2.5">
           <p className="text-[12px] text-ink-600">
             Running the suite is switched off on this public demo — it runs for over a minute and, with a model
