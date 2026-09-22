@@ -19,7 +19,7 @@ to investigate; deterministic engines decide what is true.
   adaptive agent investigates customer requests through 16 typed MCP tools and produces validated,
   priced quotes. It matched the rule-based pipeline's quote exactly, in ~21 s for ~$0.09 per run.
 - Designed deterministic engines, a grounding layer and server-enforced human approvals so the
-  model cannot invent prices, stock or technical claims. Verified with 394 tests, a 14-scenario live
+  model cannot invent prices, stock or technical claims. Verified with 402 tests, a 14-scenario live
   eval (14/14 correct business outcomes, 13/14 full passes) and prompt-injection runs, where
   grounding blocked every invented figure.
 
@@ -105,7 +105,7 @@ whatever it looked at.
   20.7 s, ~$0.0905. Same quote as the deterministic path.
 - **Adversarial:** 4 attacks. The model partly complied in prose in 3. Grounding rejected every
   invented claim. 0 claims reached customer-facing output, and nothing was approved or released.
-- **Offline tests:** 394 (268 unit, 126 integration against a real seeded Postgres).
+- **Offline tests:** 402 (276 unit, 126 integration against a real seeded Postgres).
 
 ## I. Current limitations
 
