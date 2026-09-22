@@ -136,7 +136,7 @@ export async function runAdaptiveRequest(
   await prisma.salesRequest.update({ where: { id: requestId }, data: { status: "ANALYZING" } });
   await recordAudit(prisma, requestId, {
     type: "RUN_STARTED",
-    actor: "Poka Sales Engine",
+    actor: "Sales Engine",
     summary: `Adaptive investigation started (${model}${scripted ? ", scripted stand-in" : ""}). Tool selection is model-directed; compatibility, stock, pricing and approvals remain deterministic.`,
     detail: { mode: "ADAPTIVE_AGENT", model, modelSource: scripted ? "SCRIPTED" : "LIVE" },
   });
@@ -250,7 +250,7 @@ export async function runAdaptiveRequest(
     });
     await recordAudit(prisma, requestId, {
       type: "RUN_FAILED",
-      actor: "Poka Sales Engine",
+      actor: "Sales Engine",
       summary: `Adaptive investigation stopped: ${message.split("\n")[0]}`,
     });
     throw error;
@@ -324,7 +324,7 @@ async function concludeRun(args: ConcludeArgs): Promise<AdaptiveOutcome> {
     if (groundingIssues.length > 0) {
       await recordAudit(prisma, requestId, {
         type: "GROUNDING_REJECTED",
-        actor: "Poka Sales Engine",
+        actor: "Sales Engine",
         summary: `${groundingIssues.length} unsupported claim(s) in the agent's summary were rejected; the case was routed for review.`,
         detail: { issues: groundingIssues },
       });
@@ -348,7 +348,7 @@ async function concludeRun(args: ConcludeArgs): Promise<AdaptiveOutcome> {
     });
     await recordAudit(prisma, requestId, {
       type: "AGENT_ESCALATED",
-      actor: "Poka Sales Engine",
+      actor: "Sales Engine",
       summary:
         result.guardrailEvents.length > 0
           ? `Stopped by a guardrail: ${result.guardrailEvents[result.guardrailEvents.length - 1].detail}`
@@ -481,7 +481,7 @@ async function concludeRun(args: ConcludeArgs): Promise<AdaptiveOutcome> {
       });
       await recordAudit(prisma, requestId, {
         type: "RESPONSE_DRAFTED",
-        actor: "Poka Sales Engine",
+        actor: "Sales Engine",
         summary: `Answered the customer's question from ${payload.evidenceRefs.length} cited section(s). No quotation was produced — none was requested.`,
         detail: { evidenceRefs: payload.evidenceRefs, skus: payload.skus },
       });
@@ -581,13 +581,13 @@ async function concludeRun(args: ConcludeArgs): Promise<AdaptiveOutcome> {
     });
     await recordAudit(prisma, requestId, {
       type: "APPROVAL_REQUESTED",
-      actor: "Poka Sales Engine",
+      actor: "Sales Engine",
       summary: "Specialist review requested by the adaptive agent",
       detail: { kind: "TECHNICAL_UNCERTAINTY", requiredRole: "APPLICATION_ENGINEER" },
     });
     await recordAudit(prisma, requestId, {
       type: "RECOMMENDATION_BLOCKED",
-      actor: "Poka Sales Engine",
+      actor: "Sales Engine",
       summary: payload.reason.slice(0, 200),
       detail: { blockingDimensions: payload.blockingDimensions ?? [] },
     });
@@ -724,7 +724,7 @@ async function concludeRun(args: ConcludeArgs): Promise<AdaptiveOutcome> {
   } else if (finished.autoReleaseEligible) {
     const { releaseQuote } = await import("@/lib/workflow");
     await releaseQuote(prisma, requestId, {
-      actor: "Poka Sales Engine",
+      actor: "Sales Engine",
       asOf: args.asOf,
       note: "Released without approval — every policy check was inside limits and the agent's summary was fully grounded.",
     });

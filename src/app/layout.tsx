@@ -11,7 +11,7 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "sw
 const jetbrains = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains", display: "swap" });
 
 export const metadata: Metadata = {
-  title: "Poka Sales Engine — Technical Sales Operations",
+  title: "Sales Engine — AI Technical Sales Operations",
   description:
     "An independent demonstration of an agent-assisted technical sales workspace: inbound industrial requests turned into evidence-backed, approval-gated quotations. All data is synthetic.",
 };

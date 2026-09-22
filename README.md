@@ -1,4 +1,4 @@
-# Poka Sales Engine
+# Sales Engine
 
 **Technical Sales Operations**
 
@@ -7,8 +7,8 @@ product recommendations, fulfillment plans and approval-gated commercial respons
 
 **The agent decides what to investigate. Deterministic systems decide what is true.**
 
-**Live demo:** [poka-sales-engine.up.railway.app](https://poka-sales-engine.up.railway.app) ·
-start with [REQ-2041](https://poka-sales-engine.up.railway.app/cases/REQ-2041) ·
+**Live demo:** [sales-engine.up.railway.app](https://sales-engine.up.railway.app) ·
+start with [REQ-2041](https://sales-engine.up.railway.app/cases/REQ-2041) ·
 [reviewer guide](docs/REVIEWER_GUIDE.md) · [demo script](docs/DEMO.md)
 
 The public demo is read-only: every screen is browsable, but changes and live model runs are
@@ -21,10 +21,10 @@ what is in stock, what something costs, or who has to approve it. Those answers 
 that would give the same result with no model present at all — and a claim the engines did not
 produce is rejected before it reaches a customer.
 
-> **Independent demonstration inspired by Poka's publicly described Technical Sales direction.
-> Uses entirely synthetic industrial data. Not affiliated with or commissioned by Poka.**
+> **Independent technical-sales systems project, built with entirely synthetic industrial data.**
 > Every company, person, product, price, document and stock position is generated for this build.
-> No private Poka systems, data or architecture were involved.
+> No private company systems, data or architecture were involved, and it is not connected to any
+> real system.
 
 ![The REQ-2041 case: PX-440 recommended in place of AX-220, which fails fluid temperature; 8 units from Dallas and 4 from Houston; $102,808.88; release blocked on three approvals](docs/assets/case-req-2041.png)
 
@@ -39,7 +39,7 @@ produce is rejected before it reaches a customer.
 </tr>
 </table>
 
-**Where to start:** open the [live demo](https://poka-sales-engine.up.railway.app), or run it
+**Where to start:** open the [live demo](https://sales-engine.up.railway.app), or run it
 locally, and follow the suggested walkthrough from the Overview into REQ-2041. The
 [demo script](docs/DEMO.md) has a 60-second and a 3-minute version; reviewing the code, read the
 [reviewer guide](docs/REVIEWER_GUIDE.md) first. Deployment: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
@@ -71,7 +71,7 @@ the failure mode is not a slow answer — it is a confident wrong one.
 
 ## 2. The solution
 
-Poka Sales Engine runs that investigation as an explicit, auditable pipeline. A salesperson
+Sales Engine runs that investigation as an explicit, auditable pipeline. A salesperson
 pastes the email in; the system produces a structured recommendation with:
 
 - every requirement it extracted, and the verbatim sentence each came from;
@@ -341,7 +341,7 @@ See [`docs/DEMO.md`](docs/DEMO.md) for a 60-second and a 3-minute script.
 **Prerequisites:** Node 20+ and either Docker or a local PostgreSQL 14+.
 
 ```bash
-git clone https://github.com/yds233013/poka-sales-engine && cd poka-sales-engine
+git clone https://github.com/yds233013/sales-engine && cd sales-engine
 npm install
 cp .env.example .env
 
@@ -547,5 +547,5 @@ public-demo security model and the reset procedure are in [docs/DEPLOYMENT.md](d
 
 ---
 
-*Independent demonstration inspired by Poka's publicly described Technical Sales direction. Uses
-entirely synthetic industrial data. Not affiliated with or commissioned by Poka.*
+*Independent technical-sales systems project, built with entirely synthetic industrial data. Not
+connected to any real system.*

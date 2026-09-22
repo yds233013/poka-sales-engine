@@ -511,7 +511,7 @@ async function releaseQuoteForSeed(requestId: string, actor: string) {
 }
 
 async function main() {
-  process.stdout.write("\nSeeding Poka Sales Engine\n\n");
+  process.stdout.write("\nSeeding Sales Engine\n\n");
   await clear();
   const products = await seedCatalog();
   await seedRules();

@@ -14,7 +14,7 @@ const Ctx = createContext<{ user: ActingUser; setUserId: (id: string) => void; u
   null,
 );
 
-const STORAGE_KEY = "poka.actingUserId";
+const STORAGE_KEY = "sales-engine.actingUserId";
 
 /**
  * Minimal external store over localStorage so the selection can be read with

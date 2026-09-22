@@ -84,14 +84,14 @@ export function AppShell({
         <Link
           href="/"
           className="flex h-14 items-center gap-2.5 border-b border-[var(--rail-hairline)] px-[18px] xl:px-4"
-          title="Poka Sales Engine — Technical Sales Operations"
+          title="Sales Engine — AI Technical Sales Operations"
         >
           <span className="flex size-6 shrink-0 items-center justify-center rounded-[5px] bg-white text-[11px] font-bold tracking-tight text-[var(--rail)]">
             P
           </span>
           <span className="hidden min-w-0 xl:block">
             <span className="block truncate text-[13px] font-semibold leading-tight tracking-[-0.01em] text-[var(--rail-text-strong)]">
-              Poka Sales Engine
+              Sales Engine
             </span>
             <span className="block truncate text-[11px] leading-tight text-[var(--rail-text)]">
               Technical Sales Operations
@@ -174,12 +174,12 @@ export function AppShell({
           </div>
           <div
             className="flex items-center justify-center gap-2 rounded-md border border-[var(--rail-hairline)] px-2 py-1.5 xl:justify-start"
-            title="Independent demonstration project. Every company, person, product, price and document is synthetic. Not affiliated with or used by Poka."
+            title="Independent portfolio project. Every company, person, product, price and document is synthetic. No private company systems or data were used."
           >
             <span className="size-1.5 shrink-0 self-start rounded-full bg-warn-500 xl:mt-1" aria-hidden />
             <span className="hidden text-[11px] leading-snug xl:block">
               <span className="block text-[var(--rail-text-strong)]">Synthetic demo data</span>
-              <span className="block text-[var(--rail-text)]">Independent project · not affiliated with Poka</span>
+              <span className="block text-[var(--rail-text)]">Independent project · synthetic data only</span>
             </span>
           </div>
         </div>

@@ -1,6 +1,6 @@
 # Agent architecture
 
-Poka Sales Engine has two ways to work a case. They share everything except
+Sales Engine has two ways to work a case. They share everything except
 orchestration.
 
 ```mermaid

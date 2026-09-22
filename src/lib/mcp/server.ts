@@ -1,5 +1,5 @@
 /**
- * The Poka MCP server.
+ * The Sales Engine MCP server.
  *
  * This is a real Model Context Protocol server built on the official
  * TypeScript SDK, not a set of functions renamed "tools". It registers every
@@ -23,7 +23,7 @@ import { z } from "zod";
 import { TOOL_CONTRACTS, EFFECT_DESCRIPTION, type ToolName } from "./contracts";
 import { invokeHandler, ToolInputError, type HandlerContext } from "./handlers";
 
-export const SERVER_NAME = "poka-sales-engine";
+export const SERVER_NAME = "sales-engine";
 export const SERVER_VERSION = "1.0.0";
 
 /**

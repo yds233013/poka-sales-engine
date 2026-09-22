@@ -1,4 +1,4 @@
-// Poka Sales Engine — relational schema
+// Sales Engine — relational schema
 // Domain: industrial process pumps, drives and accessories (synthetic data).
 generator client {
   provider = "prisma-client-js"

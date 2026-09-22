@@ -1,6 +1,6 @@
 # Architecture
 
-How Poka Sales Engine is put together, and — more usefully — why each boundary sits where it does.
+How Sales Engine is put together, and — more usefully — why each boundary sits where it does.
 
 ---
 

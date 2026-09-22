@@ -111,7 +111,7 @@ export async function runSalesRequest(
   await prisma.salesRequest.update({ where: { id: requestId }, data: { status: "ANALYZING" } });
   await recordAudit(prisma, requestId, {
     type: "RUN_STARTED",
-    actor: "Poka Sales Engine",
+    actor: "Sales Engine",
     summary: `Analysis started using the ${provider.label.toLowerCase()}.`,
   });
 
@@ -258,7 +258,7 @@ export async function runSalesRequest(
     });
     await recordAudit(prisma, requestId, {
       type: "RUN_FAILED",
-      actor: "Poka Sales Engine",
+      actor: "Sales Engine",
       summary: `Analysis stopped: ${message.split("\n")[0]}`,
     });
     throw error;
@@ -560,7 +560,7 @@ export async function finalizeCase(
       });
       await recordAudit(prisma, requestId, {
         type: "APPROVAL_REQUESTED",
-        actor: "Poka Sales Engine",
+        actor: "Sales Engine",
         summary: requirement.title,
         detail: { kind: requirement.kind, requiredRole: requirement.requiredRole },
       });
@@ -568,7 +568,7 @@ export async function finalizeCase(
 
     await recordAudit(prisma, requestId, {
       type: "RECOMMENDATION_GENERATED",
-      actor: "Poka Sales Engine",
+      actor: "Sales Engine",
       summary: summary.headline,
       detail: { outcome, quoteNumber: quote.quoteNumber, approvals: approvals.length },
     });
@@ -586,7 +586,7 @@ export async function finalizeCase(
     if (autoRelease && !input.deferAutoRelease) {
       const { releaseQuote } = await import("@/lib/workflow");
       await releaseQuote(prisma, requestId, {
-        actor: "Poka Sales Engine",
+        actor: "Sales Engine",
         asOf,
         note: "Released without approval — every policy check was inside limits.",
       });
@@ -1128,7 +1128,7 @@ export async function finishAsInformationRequired(
   await finishRun(prisma, runId, bus, startedAt, "COMPLETED");
   await recordAudit(prisma, requestId, {
     type: "INFORMATION_REQUESTED",
-    actor: "Poka Sales Engine",
+    actor: "Sales Engine",
     summary: `Stopped before recommending: ${gaps.join(", ")} not determinable from the request.`,
     detail: { questions },
   });
@@ -1292,7 +1292,7 @@ export async function finishAsNoViableOption(
   await finishRun(prisma, runId, bus, startedAt, "COMPLETED");
   await recordAudit(prisma, requestId, {
     type: "RECOMMENDATION_BLOCKED",
-    actor: "Poka Sales Engine",
+    actor: "Sales Engine",
     summary: summary.headline,
     detail: { rejected: rejected.slice(0, 8) },
   });
@@ -1420,7 +1420,7 @@ export async function generateCustomerResponse(
 
   await recordAudit(prisma, requestId, {
     type: "RESPONSE_GENERATED",
-    actor: "Poka Sales Engine",
+    actor: "Sales Engine",
     summary: "Customer-facing response drafted from the approved quote.",
   });
 

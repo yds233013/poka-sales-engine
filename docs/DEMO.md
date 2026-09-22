@@ -3,7 +3,7 @@
 Two paths. The 60-second one shows the product value; the 3-minute one adds the engineering
 behind it.
 
-**Where:** the live demo, https://poka-sales-engine.up.railway.app. It is read-only, so it looks
+**Where:** the live demo, https://sales-engine.up.railway.app. It is read-only, so it looks
 the same every time. Everything below works there. Buttons that would change data are disabled
 and say why. Running locally (`npm run db:seed && npm run dev`) gives the same screens with every
 action enabled.

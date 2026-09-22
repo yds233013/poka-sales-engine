@@ -3,7 +3,7 @@
 Source material for applications and interviews. Every figure here matches the product and
 `src/lib/eval/captured.ts`; nothing is rounded up.
 
-Live demo: https://poka-sales-engine.up.railway.app · Code: https://github.com/yds233013/poka-sales-engine
+Live demo: https://sales-engine.up.railway.app · Code: https://github.com/yds233013/sales-engine
 
 ---
 
@@ -54,13 +54,13 @@ server, and the agent has no tool that can decide one.
 On evaluation: 14 live scenarios on claude-sonnet-5. The business outcome was right in 14 of 14,
 and 13 of 14 passed the full eval. The failure is real and left visible.
 
-## E. Why I built it for Poka specifically
+## E. Why I built it
 
-Poka publicly describes moving into technical sales for industrial customers. That is the work
-where a confident wrong answer does real damage: a pump that can't take the temperature, or stock
-promised twice. I wanted to show how I would build an agent for that setting. It gets real
-autonomy over the investigation and no authority over the facts, and every decision it touches is
-auditable. It's an independent project on synthetic data, not affiliated with Poka.
+Technical sales for industrial customers is work where a confident wrong answer does real damage:
+a pump that can't take the temperature, or stock promised twice. I wanted to show how I would
+build an agent for that setting. It gets real autonomy over the investigation and no authority
+over the facts, and every decision it touches is auditable. It is an independent project built on
+synthetic data.
 
 ## F. The most interesting engineering decision
 

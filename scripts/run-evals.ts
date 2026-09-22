@@ -135,7 +135,7 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`\nPoka Sales Engine — evaluation`);
+  console.log(`\nSales Engine — evaluation`);
   console.log(`  ${scenarios.length} scenario(s) × ${modes.length} mode(s)`);
   console.log(
     `  adaptive mode: ${isAdaptiveAvailable() ? "available" : "UNAVAILABLE (no ANTHROPIC_API_KEY) — adaptive rows will report NOT RUN"}\n`,

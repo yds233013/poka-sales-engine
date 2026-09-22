@@ -1,5 +1,5 @@
 /**
- * Connect an MCP client to the in-process Poka server.
+ * Connect an MCP client to the in-process Sales Engine server.
  *
  * The transport pair is the SDK's own in-memory implementation, so messages
  * are genuine MCP JSON-RPC — `initialize`, `tools/list`, `tools/call` — just
@@ -21,7 +21,7 @@ export async function connectMcp(ctx: HandlerContext): Promise<McpSession> {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
 
   const client = new Client(
-    { name: "poka-adaptive-agent", version: SERVER_VERSION },
+    { name: "sales-engine-adaptive-agent", version: SERVER_VERSION },
     { capabilities: {} },
   );
 

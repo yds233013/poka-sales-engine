@@ -95,7 +95,7 @@ export default async function QuotePage({ params }: { params: Promise<{ quoteNum
                 P
               </span>
               <span className="text-[14px] font-semibold tracking-[-0.015em] text-ink-900">
-                Poka Sales Engine
+                Sales Engine
               </span>
             </div>
             <p className="mt-1 text-[11px] text-ink-500">

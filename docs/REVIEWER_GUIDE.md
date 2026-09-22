@@ -4,7 +4,7 @@ Two minutes, for someone opening this repository cold.
 
 ## Open first
 
-1. **[The live demo, REQ-2041](https://poka-sales-engine.up.railway.app/cases/REQ-2041).** One case
+1. **[The live demo, REQ-2041](https://sales-engine.up.railway.app/cases/REQ-2041).** One case
    shows the whole product. The public demo is read-only; locally every action works.
 2. **[`src/lib/mcp/contracts.ts`](../src/lib/mcp/contracts.ts).** Every tool the agent has, with its
    schema and effect. What is *missing* matters as much: there is no tool that approves, releases,
@@ -50,7 +50,7 @@ business outcome right (14 / 14), but only 13 / 14 passed the full evaluation. O
 where nothing is compatible, the agent sometimes stops once it is satisfied nothing works. It then
 records a reason against fewer candidates than the fixed pipeline does. Two runs on identical code
 evaluated 19 candidates and 12. See the red row on the
-[Evaluations page](https://poka-sales-engine.up.railway.app/evaluations) and
+[Evaluations page](https://sales-engine.up.railway.app/evaluations) and
 [`docs/EVALS.md`](EVALS.md).
 
 The adversarial results are also worth reading as written. In 3 of 4 attacks the model partly

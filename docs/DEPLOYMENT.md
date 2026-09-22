@@ -1,6 +1,6 @@
 # Deployment
 
-The public demo runs at **https://poka-sales-engine.up.railway.app**.
+The public demo runs at **https://sales-engine.up.railway.app**.
 
 ---
 
@@ -10,7 +10,7 @@ The public demo runs at **https://poka-sales-engine.up.railway.app**.
 project.** Nothing else: no queue, no cache, no separate MCP host.
 
 ```
-visitor ──► poka-sales-engine (next start, 1 replica, never sleeps) ──► Postgres (Railway, private network)
+visitor ──► sales-engine (next start, 1 replica, never sleeps) ──► Postgres (Railway, private network)
 ```
 
 Why a long-running service rather than serverless:
@@ -26,7 +26,7 @@ Why a long-running service rather than serverless:
 
 ## Service configuration
 
-Railway builds from `main` of `yds233013/poka-sales-engine` with Railpack (Node from `.nvmrc`).
+Railway builds from `main` of `yds233013/sales-engine` with Railpack (Node from `.nvmrc`).
 The settings live on the Railway service — Railway's `railway.json` config-as-code is deprecated —
 and are these:
 
@@ -39,7 +39,7 @@ and are these:
 | Health check | `GET /api/health`, 120 s timeout |
 | Restart policy | on failure, 5 retries |
 | Replicas | 1 · serverless sleep off |
-| Domain | `poka-sales-engine.up.railway.app` |
+| Domain | `sales-engine.up.railway.app` |
 
 A deploy that fails its health check never receives traffic; the previous deployment keeps serving.
 
@@ -127,6 +127,10 @@ canonical data. No scheduled reseed is configured, on purpose — with writes re
 destructive reseed would protect nothing and would take the site down for its duration and change
 every case id each night. (Links by reference, such as `/cases/REQ-2041`, survive a reseed; links
 by id do not.)
+
+The Railway service is still named `poka-sales-engine` and the local database is still
+`poka_sales_engine`: those are infrastructure identifiers, and renaming them would mean recreating
+the service or the database for no functional gain.
 
 **Manual reset**, if it is ever needed. The database has no public endpoint, so the reset runs
 inside the deploy pipeline and only the Railway project owner can trigger it. From a clone linked
