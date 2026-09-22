@@ -7,6 +7,7 @@ import { Button, Panel, PanelHeader, Pill } from "@/components/ui/primitives";
 import { cn } from "@/lib/cn";
 import { saveResponseAction } from "@/app/actions";
 import { useActingUser } from "@/components/acting-user";
+import { useDemoMode } from "@/components/demo-mode";
 
 export function ResponseEditor({
   requestId,
@@ -30,6 +31,7 @@ export function ResponseEditor({
 }) {
   const router = useRouter();
   const { user } = useActingUser();
+  const { readOnly, reason } = useDemoMode();
   const [draftSubject, setDraftSubject] = useState(subject);
   const [draftBody, setDraftBody] = useState(body);
   const [copied, setCopied] = useState(false);
@@ -84,7 +86,7 @@ export function ResponseEditor({
             </Pill>
           ) : (
             <div className="flex items-center gap-2">
-              {dirty ? (
+              {dirty && !readOnly ? (
                 <Button variant="secondary" size="sm" onClick={save} disabled={pending}>
                   {pending ? "Saving…" : "Save draft"}
                 </Button>
@@ -131,6 +133,8 @@ export function ResponseEditor({
               <input
                 value={draftSubject}
                 onChange={(e) => setDraftSubject(e.target.value)}
+                readOnly={readOnly}
+                title={readOnly ? reason : undefined}
                 aria-label="Subject"
                 className="t-body min-w-0 flex-1 bg-transparent font-medium text-ink-900 focus:outline-none"
               />
@@ -138,6 +142,8 @@ export function ResponseEditor({
             <textarea
               value={draftBody}
               onChange={(e) => setDraftBody(e.target.value)}
+              readOnly={readOnly}
+              title={readOnly ? reason : undefined}
               aria-label="Response body"
               rows={draftBody.split("\n").length + 2}
               className="block w-full resize-y bg-white px-4 py-3 text-[13.5px] leading-[1.65] text-ink-800 focus:outline-none"

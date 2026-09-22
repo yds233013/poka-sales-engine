@@ -6,6 +6,9 @@
  * Thin: each one validates its input, delegates to the workflow module (which
  * owns the rules) and revalidates. No business logic lives here, so there is
  * no second, weaker copy of the approval gate behind the UI.
+ *
+ * Every action here changes the shared case data, so each one refuses first
+ * on a read-only public demo (src/lib/demo-mode.ts).
  */
 
 import { revalidatePath } from "next/cache";
@@ -14,6 +17,7 @@ import { prisma } from "@/lib/db";
 import { runSalesRequest } from "@/lib/agent/orchestrator";
 import { runAdaptiveRequest, AdaptiveUnavailableError } from "@/lib/agent/adaptive";
 import { isAdaptiveAvailable } from "@/lib/ai/capability";
+import { publicDemoRefusal } from "@/lib/demo-mode";
 import {
   completeCase,
   decideApproval,
@@ -48,6 +52,8 @@ export async function runAnalysisAction(
   mode: "DETERMINISTIC" | "ADAPTIVE_AGENT" = "DETERMINISTIC",
 ): Promise<ActionResult> {
   try {
+    const refused = publicDemoRefusal();
+    if (refused) return refused;
     idSchema.parse(requestId);
 
     if (mode === "ADAPTIVE_AGENT") {
@@ -99,6 +105,8 @@ export async function decideApprovalAction(input: {
   note?: string;
 }): Promise<ActionResult> {
   try {
+    const refused = publicDemoRefusal();
+    if (refused) return refused;
     const parsed = decisionSchema.parse(input);
     const requestId = await decideApproval(prisma, parsed);
     revalidateCase(requestId);
@@ -113,6 +121,8 @@ export async function releaseQuoteAction(input: {
   userId: string;
 }): Promise<ActionResult> {
   try {
+    const refused = publicDemoRefusal();
+    if (refused) return refused;
     idSchema.parse(input.requestId);
     const user = await prisma.user.findUnique({ where: { id: input.userId } });
     if (!user) return { ok: false, message: "Unknown user." };
@@ -140,6 +150,8 @@ export async function saveResponseAction(input: {
   userId?: string;
 }): Promise<ActionResult> {
   try {
+    const refused = publicDemoRefusal();
+    if (refused) return refused;
     const parsed = responseSchema.parse(input);
     await saveCustomerResponse(prisma, parsed.requestId, parsed);
     revalidateCase(parsed.requestId);
@@ -161,6 +173,8 @@ export async function repriceQuoteAction(input: {
   userId: string;
 }): Promise<ActionResult> {
   try {
+    const refused = publicDemoRefusal();
+    if (refused) return refused;
     const parsed = repriceSchema.parse(input);
     const user = await prisma.user.findUnique({ where: { id: parsed.userId } });
     if (!user) return { ok: false, message: "Unknown user." };
@@ -184,6 +198,8 @@ export async function completeCaseAction(input: {
   actor: string;
 }): Promise<ActionResult> {
   try {
+    const refused = publicDemoRefusal();
+    if (refused) return refused;
     idSchema.parse(input.requestId);
     await completeCase(prisma, input.requestId, input.actor);
     revalidateCase(input.requestId);

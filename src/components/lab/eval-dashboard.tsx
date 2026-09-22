@@ -5,6 +5,7 @@ import { Panel, PanelHeader, Button, Pill, EmptyState, Mono, type Tone } from "@
 import { cn } from "@/lib/cn";
 import { runEvalSuite, type EvalSuiteResult } from "@/app/agent-lab/actions";
 import { duration } from "@/lib/format";
+import { useDemoMode } from "@/components/demo-mode";
 
 const STATUS_TONE: Record<string, Tone> = {
   PASS: "pass",
@@ -30,6 +31,7 @@ const STATUS_LABEL: Record<string, string> = {
  * did not happen.
  */
 export function EvalDashboard({ adaptiveAvailable }: { adaptiveAvailable: boolean }) {
+  const { readOnly, reason } = useDemoMode();
   const [pending, start] = useTransition();
   const [suite, setSuite] = useState<EvalSuiteResult | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -55,13 +57,21 @@ export function EvalDashboard({ adaptiveAvailable }: { adaptiveAvailable: boolea
         title="Evaluation"
         subtitle="Every scenario run in both modes and scored against the same domain truth — outcome, SKU resolution, safety, grounding and tool selection."
         actions={
-          <Button variant="secondary" size="sm" onClick={run} disabled={pending}>
+          <Button variant="secondary" size="sm" onClick={run} disabled={pending || readOnly} title={readOnly ? reason : undefined}>
             {pending ? "Running suite…" : suite ? "Re-run suite" : "Run evaluation suite"}
           </Button>
         }
       />
 
-      {!adaptiveAvailable ? (
+      {readOnly ? (
+        <div className="border-b border-[var(--hairline)] bg-ink-50 px-4 py-2.5">
+          <p className="text-[12px] text-ink-600">
+            Running the suite is switched off on this public demo — it runs for over a minute and, with a model
+            configured, spends API credit. The measured results are shown above; <code>npm run eval</code> reproduces
+            them locally.
+          </p>
+        </div>
+      ) : !adaptiveAvailable ? (
         <div className="border-b border-[var(--hairline)] bg-warn-50 px-4 py-2.5">
           <p className="text-[12px] text-warn-700">
             No model provider is configured, so adaptive scenarios will report{" "}
@@ -73,7 +83,11 @@ export function EvalDashboard({ adaptiveAvailable }: { adaptiveAvailable: boolea
       {!suite ? (
         <EmptyState
           title="No evaluation has been run in this session"
-          description="Running the suite executes every scenario end to end against the real engines. It takes a minute or so."
+          description={
+            readOnly
+              ? "Not run on this deployment."
+              : "Running the suite executes every scenario end to end against the real engines. It takes a minute or so."
+          }
         />
       ) : (
         <>

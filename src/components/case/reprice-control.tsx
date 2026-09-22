@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/primitives";
 import { repriceQuoteAction } from "@/app/actions";
 import { useActingUser } from "@/components/acting-user";
+import { useDemoMode } from "@/components/demo-mode";
 
 /**
  * Apply a rep-entered discount off list.
@@ -27,6 +28,7 @@ export function RepriceControl({
 }) {
   const router = useRouter();
   const { user } = useActingUser();
+  const { readOnly, reason } = useDemoMode();
   const [value, setValue] = useState("");
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [pending, start] = useTransition();
@@ -44,10 +46,10 @@ export function RepriceControl({
       router.refresh();
     });
 
-  if (disabled) {
+  if (disabled || readOnly) {
     return (
       <p className="border-t border-[var(--hairline)] px-4 py-2.5 text-[11.5px] text-ink-400">
-        {disabledReason}
+        {disabled ? disabledReason : `Repricing is switched off. ${reason}`}
       </p>
     );
   }

@@ -14,6 +14,7 @@ import { prisma } from "@/lib/db";
 import { runSalesRequest } from "@/lib/agent/orchestrator";
 import { runAdaptiveRequest, AdaptiveUnavailableError } from "@/lib/agent/adaptive";
 import { isAdaptiveAvailable } from "@/lib/ai/capability";
+import { isPublicDemo, READ_ONLY_REASON } from "@/lib/demo-mode";
 import { EVAL_SCENARIOS, scenarioById } from "@/lib/eval/scenario";
 import { runScenario, prepareScenarioCase, sweepOrphanedEvalCases, type EvalResult } from "@/lib/eval/runner";
 
@@ -60,6 +61,18 @@ const runSchema = z.object({
 export async function runInLab(input: z.infer<typeof runSchema>): Promise<LabRunResult> {
   try {
     const parsed = runSchema.parse(input);
+
+    // On a public demo only a seeded scenario in deterministic mode may run:
+    // it works on a throwaway copy, never the canonical case, and spends
+    // nothing. Custom requests and re-runs of seeded cases would change the
+    // data every other visitor sees. Stale copies are swept first so the
+    // table cannot grow without bound.
+    if (isPublicDemo()) {
+      if (parsed.mode !== "DETERMINISTIC" || !parsed.scenarioId || parsed.customRfq || parsed.reference) {
+        return { ok: false, message: READ_ONLY_REASON, run: null, requestId: null, runId: null };
+      }
+      await sweepOrphanedEvalCases(prisma);
+    }
 
     if (parsed.mode === "ADAPTIVE_AGENT" && !isAdaptiveAvailable()) {
       return {
@@ -202,8 +215,13 @@ export interface EvalSuiteResult {
   rows: { scenarioId: string; title: string; deterministic: EvalResult; adaptive: EvalResult }[];
 }
 
-/** Run the whole suite in both modes. Adaptive reports NOT_RUN without a key. */
+/**
+ * Run the whole suite in both modes. Adaptive reports NOT_RUN without a key.
+ * Refused on a public demo: it runs for over a minute and, with a key, spends
+ * model credit on every scenario.
+ */
 export async function runEvalSuite(): Promise<EvalSuiteResult> {
+  if (isPublicDemo()) throw new Error(READ_ONLY_REASON);
   await sweepOrphanedEvalCases(prisma);
   const rows: EvalSuiteResult["rows"] = [];
   for (const scenario of EVAL_SCENARIOS) {

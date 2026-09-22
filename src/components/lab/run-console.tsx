@@ -7,6 +7,7 @@ import { Panel, Button, Pill, SectionLabel, Mono, statusLabel } from "@/componen
 import { duration } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { runInLab, type LabRunResult } from "@/app/agent-lab/actions";
+import { useDemoMode } from "@/components/demo-mode";
 
 export interface ModeOption {
   mode: "DETERMINISTIC" | "ADAPTIVE_AGENT";
@@ -34,6 +35,7 @@ export function RunConsole({
   accounts: { accountNumber: string; name: string }[];
 }) {
   const router = useRouter();
+  const { readOnly } = useDemoMode();
   const [pending, start] = useTransition();
   const [mode, setMode] = useState<ModeOption["mode"]>("DETERMINISTIC");
   const [scenarioId, setScenarioId] = useState(scenarios[0]?.id ?? "");
@@ -59,8 +61,12 @@ export function RunConsole({
       router.refresh();
     });
 
+  // A public demo runs seeded scenarios only — on a throwaway copy — so a
+  // custom request, which would add a case every visitor sees, is refused.
+  const customBlocked = readOnly && tab === "custom";
   const canRun =
     selectedMode.available &&
+    !customBlocked &&
     (tab === "scenario" ? Boolean(scenarioId) : subject.trim().length > 2 && body.trim().length > 20);
 
   return (
@@ -190,6 +196,10 @@ export function RunConsole({
         </Button>
         {!selectedMode.available ? (
           <span className="text-[11.5px] text-ink-500">{selectedMode.unavailableReason}</span>
+        ) : customBlocked ? (
+          <span className="text-[11.5px] text-ink-500">
+            Custom requests are switched off on this public demo. Seeded scenarios still run, on a throwaway copy.
+          </span>
         ) : null}
         {result ? (
           <span className={cn("text-[11.5px]", result.ok ? "text-pass-700" : "text-fail-700")}>

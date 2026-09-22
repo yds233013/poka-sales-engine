@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChevronRight, CircleCheck, CircleX, Clock, RotateCcw } from "lucide-react";
 import { Button, statusLabel } from "@/components/ui/primitives";
 import { decideApprovalAction } from "@/app/actions";
+import { useDemoMode } from "@/components/demo-mode";
 import { dateTime } from "@/lib/format";
 import { APPROVAL_KIND_LABEL, ROLE_LABEL } from "@/lib/status";
 import { cn } from "@/lib/cn";
@@ -42,6 +43,7 @@ export function ApprovalCard({
   actingUserRole: string;
 }) {
   const router = useRouter();
+  const { readOnly, reason } = useDemoMode();
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -111,7 +113,11 @@ export function ApprovalCard({
 
           {open ? (
             <div className="mt-2.5">
-              {canDecide ? (
+              {canDecide && readOnly ? (
+                <p className="t-small rounded-md border border-dashed border-[var(--hairline-strong)] bg-white px-2.5 py-2 text-ink-500">
+                  You could decide this as the acting user. {reason}
+                </p>
+              ) : canDecide ? (
                 <>
                   <textarea
                     value={note}

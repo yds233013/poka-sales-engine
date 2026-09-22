@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/primitives";
+import { useDemoMode } from "@/components/demo-mode";
 import {
   completeCaseAction,
   releaseQuoteAction,
@@ -30,6 +31,7 @@ export function CaseActions({
   adaptiveUnavailableReason: string | null;
 }) {
   const router = useRouter();
+  const { readOnly, reason } = useDemoMode();
   const [pending, start] = useTransition();
   const [result, setResult] = useState<ActionResult | null>(null);
 
@@ -41,8 +43,8 @@ export function CaseActions({
       router.refresh();
     });
 
-  const canRelease = hasQuote && blockingApprovals === 0 && ["APPROVED", "READY_FOR_APPROVAL"].includes(status);
-  const canComplete = status === "RESPONSE_READY";
+  const canRelease = !readOnly && hasQuote && blockingApprovals === 0 && ["APPROVED", "READY_FOR_APPROVAL"].includes(status);
+  const canComplete = !readOnly && status === "RESPONSE_READY";
   const runLabel = status === "NEW" ? "Run analysis" : "Re-run analysis";
 
   return (
@@ -51,7 +53,8 @@ export function CaseActions({
         <Button
           variant="secondary"
           onClick={() => run(() => runAnalysisAction(requestId, "DETERMINISTIC"))}
-          disabled={pending}
+          disabled={pending || readOnly}
+          title={readOnly ? reason : undefined}
         >
           {pending ? "Working…" : runLabel}
         </Button>
@@ -97,6 +100,12 @@ export function CaseActions({
           >
             Mark sent &amp; close
           </Button>
+        ) : null}
+
+        {readOnly && hasQuote && blockingApprovals === 0 && ["APPROVED", "READY_FOR_APPROVAL", "RESPONSE_READY"].includes(status) ? (
+          <span className="cursor-not-allowed rounded bg-ink-100 px-3 py-1.5 text-[12px] font-medium text-ink-400" title={reason}>
+            {status === "RESPONSE_READY" ? "Mark sent & close" : "Release quote"}
+          </span>
         ) : null}
 
         {hasQuote && blockingApprovals > 0 ? (

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import {
   Activity,
   Building2,
@@ -57,7 +57,15 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
     getPolicyThresholds(),
     prisma.warehouse.findMany({ select: { code: true, name: true, city: true } }),
   ]);
-  if (!request) notFound();
+  if (!request) {
+    // Case ids change whenever the demo is reseeded; the reference does not.
+    // /cases/REQ-2041 is the stable link used in the docs and demo script.
+    const byReference = /^[A-Z]{2,5}-\d+$/.test(id)
+      ? await prisma.salesRequest.findFirst({ where: { reference: id }, select: { id: true } })
+      : null;
+    if (byReference) redirect(`/cases/${byReference.id}`);
+    notFound();
+  }
 
   const adaptiveMode = executionModes().find((m) => m.mode === "ADAPTIVE_AGENT")!;
   const recommendation = request.recommendations[0] ?? null;

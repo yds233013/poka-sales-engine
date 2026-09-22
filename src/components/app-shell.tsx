@@ -65,11 +65,14 @@ export function AppShell({
   children,
   adaptiveModel,
   counts,
+  publicDemo = false,
 }: {
   children: ReactNode;
   /** Model name when a provider is configured, null when running offline. */
   adaptiveModel: string | null;
   counts: { open: number; approvals: number };
+  /** Read-only public deployment: live runs off, shared data protected. */
+  publicDemo?: boolean;
 }) {
   const pathname = usePathname() ?? "/";
 
@@ -158,8 +161,16 @@ export function AppShell({
             <StatusLine
               tone={adaptiveModel ? "accent" : "idle"}
               label="Adaptive agent"
-              value={adaptiveModel ?? "Offline"}
+              value={adaptiveModel ?? (publicDemo ? "Captured runs" : "Offline")}
             />
+            {publicDemo ? (
+              <StatusLine
+                tone="idle"
+                label="Public demo"
+                value="Read-only"
+                title="Browsing is open; changes and live model runs are switched off so every visitor sees the same data."
+              />
+            ) : null}
           </div>
           <div
             className="flex items-center justify-center gap-2 rounded-md border border-[var(--rail-hairline)] px-2 py-1.5 xl:justify-start"
@@ -179,9 +190,19 @@ export function AppShell({
   );
 }
 
-function StatusLine({ tone, label, value }: { tone: "pass" | "accent" | "idle"; label: string; value: string }) {
+function StatusLine({
+  tone,
+  label,
+  value,
+  title,
+}: {
+  tone: "pass" | "accent" | "idle";
+  label: string;
+  value: string;
+  title?: string;
+}) {
   return (
-    <div className="flex items-center gap-2 text-[11px] leading-tight">
+    <div className="flex items-center gap-2 text-[11px] leading-tight" title={title}>
       <span
         className={cn(
           "size-1.5 shrink-0 rounded-full",
