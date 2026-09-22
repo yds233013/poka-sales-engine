@@ -42,15 +42,17 @@ export function adaptiveApiKey(): string | null {
  * calling a server action directly cannot get around it.
  */
 export function liveAdaptivePolicy(): { allowed: boolean; reason: string | null } {
-  if (!adaptiveApiKey()) {
-    return { allowed: false, reason: "No ANTHROPIC_API_KEY is configured, so no model is available to direct an investigation." };
-  }
+  // The public-demo reason comes first: it is the one a visitor needs, whether
+  // or not a key happens to be configured.
   if (process.env.PUBLIC_DEMO?.trim() === "true" && process.env.ALLOW_LIVE_ADAPTIVE?.trim() !== "true") {
     return {
       allowed: false,
       reason:
         "Live model runs are switched off on this public demo so visitors cannot spend API credit. The captured live runs are shown instead.",
     };
+  }
+  if (!adaptiveApiKey()) {
+    return { allowed: false, reason: "No ANTHROPIC_API_KEY is configured, so no model is available to direct an investigation." };
   }
   return { allowed: true, reason: null };
 }

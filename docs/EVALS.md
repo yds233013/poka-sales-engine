@@ -14,7 +14,7 @@ npm run eval -- --scenario hero-substitution
 
 Or open **/evaluations** and press *Run evaluation suite*. That page also shows the captured live suite, scenario by scenario, and the adversarial runs.
 
-On a deployment with `PUBLIC_DEMO=true`, adaptive rows report *Not run*: live model calls are switched off so visitors cannot spend API credit ([DEPLOYMENT.md](DEPLOYMENT.md)).
+On a deployment with `PUBLIC_DEMO=true` the suite cannot be started from the UI or by calling the action directly: it runs for over a minute and, with a key, spends API credit. The measured results are shown instead ([DEPLOYMENT.md](DEPLOYMENT.md)).
 
 Without `ANTHROPIC_API_KEY`, adaptive scenarios report **NOT_RUN** with the
 reason. They do not report zero, they do not report a pass, and they never

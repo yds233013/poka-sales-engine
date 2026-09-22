@@ -38,6 +38,14 @@ describe("live adaptive policy", () => {
     expect(adaptive.unavailableReason).toMatch(/public demo/i);
   });
 
+  it("gives the public-demo reason on a public demo with no key", () => {
+    delete process.env.ANTHROPIC_API_KEY;
+    process.env.PUBLIC_DEMO = "true";
+    const policy = liveAdaptivePolicy();
+    expect(policy.allowed).toBe(false);
+    expect(policy.reason).toMatch(/public demo/i);
+  });
+
   it("can be re-enabled deliberately on a public demo", () => {
     process.env.ANTHROPIC_API_KEY = "sk-ant-test";
     process.env.PUBLIC_DEMO = "true";

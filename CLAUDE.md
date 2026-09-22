@@ -81,6 +81,10 @@ these, that is the thing to discuss before writing it.
   evidence of model behaviour.
 - **Live model spend is gated in `runAdaptiveRequest`**, not only in the UI.
   `PUBLIC_DEMO=true` turns live runs off; see `docs/DEPLOYMENT.md`.
+- **The public demo is read-only at the server.** Every mutating server action
+  calls `publicDemoRefusal()` (`src/lib/demo-mode.ts`) first. A new action that
+  changes shared data must do the same, and `tests/integration/public-demo.test.ts`
+  must cover it.
 - **Workspace figures come from the case's own records.** Nothing about
   REQ-2041 is special-cased; `src/lib/demo.ts` only names which case the
   overview suggests as a walkthrough.
