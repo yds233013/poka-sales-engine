@@ -1,6 +1,6 @@
-# Poka Sales Engine — working notes
+# Engineering invariants
 
-Invariants that hold across the whole codebase. If a change would break one of
+The rules that hold across the whole codebase. If a change would break one of
 these, that is the thing to discuss before writing it.
 
 ## Business truth

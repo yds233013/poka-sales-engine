@@ -210,7 +210,7 @@ executed trace, not a narration written afterwards. Chain-of-thought is never ca
 | Measured live results | [`src/lib/eval/captured.ts`](src/lib/eval/captured.ts) |
 | The case workspace UI | [`src/components/workspace/`](src/components/workspace) — decision summary, validation matrix, evidence, fulfillment, commercials, activity |
 | The live-spend gate | `liveAdaptivePolicy` in [`src/lib/ai/capability.ts`](src/lib/ai/capability.ts), enforced in `runAdaptiveRequest` |
-| The invariants that must not break | [`CLAUDE.md`](CLAUDE.md) |
+| The invariants that must not break | [`docs/INVARIANTS.md`](docs/INVARIANTS.md) |
 
 ## 5. The human approval model
 
