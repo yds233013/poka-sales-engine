@@ -10,7 +10,9 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate deploy",
+    "db:release": "npm run db:migrate && npm run db:seed:if-empty",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:if-empty": "tsx prisma/seed-if-empty.ts",
     "db:setup": "npm run db:generate && npm run db:push && npm run db:seed",
     "db:studio": "prisma studio",
     "typecheck": "tsc --noEmit",
@@ -34,6 +36,7 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "tailwind-merge": "3.7.0",
+    "tsx": "4.23.13",
     "zod": "4.6.5"
   },
   "devDependencies": {
@@ -45,7 +48,6 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
     "tailwindcss": "^4",
-    "tsx": "4.23.13",
     "typescript": "^5",
     "vitest": "3.2.7"
   },
