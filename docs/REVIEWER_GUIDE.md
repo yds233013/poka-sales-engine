@@ -39,7 +39,7 @@ test suite asserts that they match.
 | Human transitions and the role gate | [`src/lib/workflow.ts`](../src/lib/workflow.ts) |
 | Live-spend gate · public-demo write guard | [`src/lib/ai/capability.ts`](../src/lib/ai/capability.ts) · [`src/lib/demo-mode.ts`](../src/lib/demo-mode.ts) |
 | Evals: scenarios, scoring, captured live results | [`src/lib/eval/`](../src/lib/eval) (`scenario.ts`, `runner.ts`, `captured.ts`) |
-| Tests | [`tests/unit/`](../tests/unit) (267, no database) · [`tests/integration/`](../tests/integration) (126, real seeded Postgres) |
+| Tests | [`tests/unit/`](../tests/unit) (268, no database) · [`tests/integration/`](../tests/integration) (126, real seeded Postgres) |
 
 `npm run verify` runs typecheck, lint, both test suites and the production build.
 
